@@ -4,7 +4,7 @@ use strict;
 use warnings;
 use TOML;
 use FindBin;
-use File::Slurper;
+use File::Slurper qw/read_text/;
 
 our $config;
 
@@ -23,3 +23,5 @@ sub config {
 
   return $config;
 }
+
+1;
