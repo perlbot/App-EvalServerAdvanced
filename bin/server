@@ -7,4 +7,6 @@ use lib $FindBin::Bin . "/../lib";
 
 use EvalServer;
 
-EvalServer->run();
+my $es = EvalServer->new();
+$es->run();
+#EvalServer->run();

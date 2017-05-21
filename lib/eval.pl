@@ -1,7 +1,5 @@
 #!/usr/bin/env perl
 
-#use lib '/home/ryan/perl5/lib/perl5/i686-linux';
-#use lib '/home/ryan/perl5/lib/perl5';
 use lib '/eval/elib';
 
 use strict;
@@ -49,13 +47,6 @@ do {
     sub can {my ($self, $meth) = @_; return sub{$self->$meth(@_)}}
     };
 
-# save the old stdout, we're going to clobber it soon. STDOUT
-my $oldout;
-my $outbuffer = "";
-open($oldout, ">&STDOUT") or die "Can't dup STDOUT: $!";
-open(my $stdh, ">", \$outbuffer)
-               or die "Can't dup to buffer: $!";
-select($stdh);
 $|++;
 #*STDOUT = $stdh;
 
@@ -129,50 +120,11 @@ use B::Deparse;
 
  binmode STDOUT, ":encoding(utf8)"; # Enable utf8 output.
 
-#BEGIN{ eval "use PHP::Interpreter;"; }
-
-# Evil Ruby stuff
-#BEGIN{ eval "use Inline::Ruby qw/rb_eval/;"; }
-#BEGIN { $SIG{SEGV} = sub { die "Segmentation Fault\n"; } } #Attempt to override the handler Ruby installs.
-
-# # Evil K20 stuff
-# BEGIN {
-# 	local $@;
-# 	eval "use Language::K20;";
-# 	unless( $@ ) {
-# 		Language::K20::k20eval( "2+2\n" ); # This eval loads the dynamic components before the chroot.
-#                                    # Note that k20eval always tries to output to stdout so we
-#                                    # must end the command with a \n to prevent this output.
-# 	}
-# }
-#
-# BEGIN { chdir "var/"; $0="../$0"; } # CHDIR to stop inline from creating stupid _Inline directories everywhere
-# # Inline::Lua doesn't seem to provide an eval function. SIGH.
-# BEGIN { eval 'use Inline Lua => "function lua_eval(str) return loadstring(str) end";'; }
-# BEGIN { chdir ".."; $0=~s/^\.\.\/// } # Assume our earlier chdir succeded. Yay!
-
-
-# # Evil python stuff
-# BEGIN { eval "use Inline::Python qw/py_eval/;"; }
-
-# # Evil J stuff
-# BEGIN { eval "use Jplugin;"; }
-
-use Carp::Heavy;
-use Storable qw/nfreeze/; nfreeze([]); #Preload Nfreeze since it's loaded on demand
-
-my ($type, $code) = @_; # Take these from ARGV now
+  my ($type, $code) = @_; # Take these from ARGV now
 
   # redirect STDIN to /dev/null, to avoid warnings in convoluted cases.
   # we have to leave this open for perl4, so only do this for other systems
   open STDIN, '<', '/dev/null' or die "Can't open /dev/null: $!";
-
-
-# 	# Root Check
-# 	if( $< != 0 )
-# 	{
-# 		die "Not root, can't chroot or take other precautions, dying\n";
-# 	}
 
   # This should stay in place, that way we don't let people accidentally run as root
 	die "Failed to drop root: $<" if $< == 0;
@@ -198,31 +150,12 @@ my ($type, $code) = @_; # Take these from ARGV now
 	elsif( $type eq 'javascript' ) {
 		javascript_code($code);
 	}
-#	elsif( $type eq 'php' ) {
-#		php_code($code);
-#	}
-#	elsif( $type eq 'k20' ) {
-#		k20_code($code);
-#	}
 	elsif( $type eq 'ruby' ) {
 		ruby_code($code);
 	}
-#	elsif( $type eq 'py' or $type eq 'python' ) {
-#		python_code($code);
-#	}
-#	elsif( $type eq 'lua' ) {
-#		lua_code($code);
-#	}
-#	elsif( $type eq 'j' ) {
-#		j_code($code);
-#	}
   else {
     die "Failed to find language $type";
   }
-#        *STDOUT = $oldout;
-        close($stdh);
-        select(STDOUT);
-        print($outbuffer);
 
 	exit;
 

@@ -8,7 +8,7 @@ use Sys::Linux::Namespace;
 use Sys::Linux::Mount qw/:all/;
 my %sig_map;
 use FindBin;
-use Path::Tiny;
+use Path::Tiny qw/path/;
 use BSD::Resource;
 
 use EvalServer::Config;
@@ -21,15 +21,6 @@ do {
 };
 
 my $namespace = Sys::Linux::Namespace->new(private_pid => 1, no_proc => 1, private_mount => 1, private_uts => 1,  private_ipc => 0, private_sysvsem => 1);
-
-# {files => [
-#      {filename => '...',
-#       contents => '...',},
-#       ...,],
-#  main_file => 'filename',
-#  main_language => '',
-# }
-#
 
 sub _rel2abs {
   my $p = shift;
@@ -48,6 +39,9 @@ sub run_eval {
 
 	my $filename = '/eval/elib/eval.pl';
 
+  use Carp 'cluck';
+  #cluck "run_eval called";
+
   my @binds = config->sandbox->bind_mounts->@*;
 
   # these two MUST happen
@@ -58,16 +52,21 @@ sub run_eval {
 	my $nobody_uid = getpwnam("nobody");
 	die "Error, can't find a uid for 'nobody'. Replace with someone who exists" unless $nobody_uid;
 
-  $namespace->run(code => sub {
+  my $exitcode = $namespace->run(code => sub {
+    exit(10); # exit first
     for my $bind (@binds) {
-      Path::Tiny->mkpath($jail_path . $bind->{target});
+      path($jail_path . $bind->{target})->mkpath;
       mount(_rel2abs $bind->{src}, $jail_path . $bind->{target}, undef, MS_BIND|MS_PRIVATE|MS_RDONLY, undef);
     }
 
-    Path::Tiny->mkpath("$jail_path/tmp");
+    path("$jail_path/tmp")->mkpath;
     my $tmpfs_size = config->sandbox->tmpfs_size // "16m";
     mount("tmpfs", "$jail_path/tmp", "tmpfs", 0, {size => $tmpfs_size});
     mount("tmpfs", "$jail_path/tmp", "tmpfs", MS_PRIVATE, {size => $tmpfs_size});
+
+    # TODO overlayfs?
+    # Path::Tiny->mkpath("$jail_path/tmp/.overlayfs");
+    # mount("overlay", "/eval", "overlay", 0, {upper => "/tmp", lower=>"/eval", workdir => "$jail_path/tmp/.overlayfs"})
 
     chdir($jail_path) or die "Jail was not made"; # ensure it exists before we chroot. unnecessary?
     chroot($jail_path) or die $!;
@@ -89,17 +88,22 @@ sub run_eval {
 
     my %ENV = config->sandbox->environment->%*; # set the environment up
 
+    # TODO make this unneeded
     #system("/perl5/perlbrew/perls/perlbot-inuse/bin/perl", $filename); 
-    system($^X, $filename, $language, $code); 
-    my ($exit, $signal) = (($?&0xFF00)>>8, $?&0xFF);
-
-    if ($exit) {
-     print "[Exited $exit]";
-    } elsif ($signal) {
-     my $signame = $sig_map{$signal} // $signal;
-     print "[Died $signame]";
-    }
+    #exec($^X, $filename, $language, $code);
+    print "Hello World";
   });
+
+  my ($exit, $signal) = (($exitcode&0xFF00)>>8, $exitcode&0xFF);
+
+  use Data::Dumper;
+
+  if ($exit) {
+    print "[Exited $exit]";
+  } elsif ($signal) {
+    my $signame = $sig_map{$signal} // $signal;
+    print "[Died $signame]";
+  }
 }
 
 sub set_resource_limits {
@@ -122,10 +126,10 @@ sub set_resource_limits {
   $srl->(RLIMIT_NPROC, $cfg_rlimits->NPROC) and
   $srl->(RLIMIT_NOFILE, $cfg_rlimits->NOFILE) and
   $srl->(RLIMIT_OFILE, $cfg_rlimits->OFILE) and
-  $srl->(RLIMIT_OPEN_MAX, $cfg_limit->OPEN_MAX) and
-  $srl->(RLIMIT_LOCKS, $cfg_limit->LOCKS) and 
-  $srl->(RLIMIT_MEMLOCK, $cfg_limit->MEMLOCK) and
-  $srl->(RLIMIT_CPU, $cfg_limit->CPU)
+  $srl->(RLIMIT_OPEN_MAX, $cfg_rlimits->OPEN_MAX) and
+  $srl->(RLIMIT_LOCKS, $cfg_rlimits->LOCKS) and 
+  $srl->(RLIMIT_MEMLOCK, $cfg_rlimits->MEMLOCK) and
+  $srl->(RLIMIT_CPU, $cfg_rlimits->CPU)
 		or die "Failed to set rlimit: $!";
 }
 
