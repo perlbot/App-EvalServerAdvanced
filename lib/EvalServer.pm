@@ -18,13 +18,6 @@ has _inited => (is => 'rw', default => 0);
 
 my $es_config = config->evalserver;
 
-my $worker_func = IO::Async::Function->new(
-    max_workers => $es_config->max_workers // 5,
-    min_workers => $es_config->min_workers // 0,
-    max_worker_calls => $es_config->max_evals_per_worker // 0,
-    idle_timeout => $es_config->worker_idle_timeout // 30,
-    code => \&worker);
-
 sub init {
   my ($self) = @_;
   return if $self->_inited();

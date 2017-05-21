@@ -3,6 +3,9 @@ port = "14401"
 host = "127.0.0.1"
 timeout = 10 # number of seconds to allow the eval to run, wall time
 
+[jobmanager]
+max_workers = 5
+
 [sandbox]
 # Relative paths are turned to absolute ONLY by using $FindBin::Bin
 # target path's are abolsute and only exist in the chroot
