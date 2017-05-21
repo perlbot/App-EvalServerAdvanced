@@ -12,6 +12,7 @@ use Path::Tiny qw/path/;
 use BSD::Resource;
 
 use EvalServer::Config;
+use POSIX qw/_exit/;
 
 do {
   my @sig_names = split ' ', $Config{sig_name}; 
@@ -46,18 +47,25 @@ sub run_eval {
 
   # these two MUST happen
   push @binds, {src => "../lib", target => "/eval/elib"};
-  unshift @binds, {src => $jail_path, target => "/"};
+#  unshift @binds, {src => $jail_path, target => "/"};
+#  unshift @binds, {src => "/", target => "/"};
 
 	# Get the nobody uid before we chroot, namespace and do other funky stuff.
 	my $nobody_uid = getpwnam("nobody");
 	die "Error, can't find a uid for 'nobody'. Replace with someone who exists" unless $nobody_uid;
 
   my $exitcode = $namespace->run(code => sub {
-    exit(10); # exit first
+    local $^S=0; # hide the eval that we're in from IPC::Run
+    # TODO investigate why this is needed
+    $SIG{__DIE__} = sub {print STDERR "e: ", $^S, "\n"; die @_ if $^S; print STDERR @_; _exit(1)};
+
     for my $bind (@binds) {
+
       path($jail_path . $bind->{target})->mkpath;
-      mount(_rel2abs $bind->{src}, $jail_path . $bind->{target}, undef, MS_BIND|MS_PRIVATE|MS_RDONLY, undef);
+      mount(_rel2abs($bind->{src}), $jail_path . $bind->{target}, undef, MS_BIND|MS_PRIVATE|MS_RDONLY, undef);
     }
+
+    exit(2);
 
     path("$jail_path/tmp")->mkpath;
     my $tmpfs_size = config->sandbox->tmpfs_size // "16m";
@@ -67,6 +75,7 @@ sub run_eval {
     # TODO overlayfs?
     # Path::Tiny->mkpath("$jail_path/tmp/.overlayfs");
     # mount("overlay", "/eval", "overlay", 0, {upper => "/tmp", lower=>"/eval", workdir => "$jail_path/tmp/.overlayfs"})
+    print "HELLO WORLD\n";
 
     chdir($jail_path) or die "Jail was not made"; # ensure it exists before we chroot. unnecessary?
     chroot($jail_path) or die $!;
@@ -96,14 +105,14 @@ sub run_eval {
 
   my ($exit, $signal) = (($exitcode&0xFF00)>>8, $exitcode&0xFF);
 
-  use Data::Dumper;
-
   if ($exit) {
     print "[Exited $exit]";
   } elsif ($signal) {
     my $signame = $sig_map{$signal} // $signal;
     print "[Died $signame]";
   }
+
+  _exit(0);
 }
 
 sub set_resource_limits {

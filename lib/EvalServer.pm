@@ -50,7 +50,7 @@ sub run {
 
   my @res = eval {$worker_func->call(args => [$evalobj])->get()};
 
-  print Dumper(\@res, $@);
+  print Dumper({r=>\@res, e=>$@});
 }
 
 sub worker {
@@ -86,9 +86,11 @@ sub worker {
   $h->kill_kill; # shouldn't be necessary but it's safe
   eval {$h->finish();} if $err;
 
+  _exit(0) if ($origpid != $$); # WHY IS THIS HAPPENING?
+
   print STDERR Dumper({out => $out, pid => $$, opid => $origpid});
 
-  return "poop $out";  
+  return "$out";  
 }
 
 1;
