@@ -1,22 +1,61 @@
 [evalserver]
-port="14401"
-host="127.0.0.1"
+port = "14401"
+host = "127.0.0.1"
+timeout = 10 # number of seconds to allow the eval to run, wall time
 
 [sandbox]
-jail_root="../jail_root"
-bind_mounts=[
+# Relative paths are turned to absolute ONLY by using $FindBin::Bin
+# target path's are abolsute and only exist in the chroot
+jail_root = "../jail_root"
+home_dir = "/eval"
+bind_mounts = [
 	{src = "/lib64",           target = "/lib64"},
 	{src = "/lib",             target = "/lib"},
 	{src = "/usr/lib",         target = "/usr/lib"},
 	{src = "/usr/bin",         target = "/usr/bin"},
 	{src = "/home/ryan/perl5", target = "/perl5"},
 	{src = "/home/ryan/perl5", target = "/home/ryan/perl5"},
-	{src = "../lib",           target = "/eval/elib"},
 	{src = "../langs",         target = "/langs"},
 ]
 
+[sandbox.devices]
+# MASSIVE TODO
+# Entries in /dev that must exist
+# each entry is an array, [type, major, minor]
+null = ["c", 1, 3]
+urandom = ["c", 1, 9]
+random = ["c", 1, 9] # make this just the same as urandom, it doesn't matter to us
+
+[sandbox.environment]
+TZ="Asia/Pyongyang"
+
+[sandbox.rlimits]
+VMEM = "750M"
+AS = "750M"
+DATA = "500M"
+STACK = "30M"
+NPROC = 20
+NOFILE = 30
+OFILE = 30
+OPEN_MAX = 30
+LOCKS = 5
+MEMLOCK = 100
+CPU = 10
+
 [language]
-"perl"={}
+# Each language requires a few keys
+#
+# One of sub or bin
+# * sub is the name of a perl subroutine in the wrapper script
+# * bin is the path to a binary to run after sandboxing
+# And
+# * args => ['-w', '%file%']
+#
+# Optional args
+# TODO figure out a sane way to do the wrapper scripts for -e and Dumper of results etc.
+
+"perl"={sub="run_perl"}
+"deparse"={sub="deparse_perl"}
 "perl4"={bin="/perl5/perlbrew/perls-4.0.36/bin/perl"}
 "perl5.5"={bin="/perl5/perlbrew/perls-5.005_04/bin/perl"}
 "perl5.6"={bin="/perl5/perlbrew/perls-5.6.2/bin/perl"}
@@ -30,4 +69,7 @@ bind_mounts=[
 "perl5.22"={bin="/perl5/perlbrew/perls-5.22.3/bin/perl"}
 "perl5.24"={bin="/perl5/perlbrew/perls-5.24.0/bin/perl"}
 ruby={bin="/usr/bin/ruby2.1"}
-node={bin="/langs/node-custom/bin/node"}
+
+# Can also write in long form if it makes more sense
+[language.node]
+bin="/langs/node-custom/bin/node"

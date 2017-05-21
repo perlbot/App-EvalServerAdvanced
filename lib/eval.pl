@@ -7,7 +7,6 @@ use lib '/eval/elib';
 use strict;
 use Data::Dumper;
 use Scalar::Util; #Required by Data::Dumper
-use BSD::Resource;
 use File::Glob;
 use POSIX;
 use List::Util qw/reduce/;
@@ -19,6 +18,7 @@ use Encode qw/encode decode/;
 use IO::String;
 use File::Slurper qw/read_text/;
 use EvalServer::Seccomp;
+use EvalServer::Config;
 use File::Temp;
 
 # Easter eggs
@@ -58,23 +58,6 @@ open(my $stdh, ">", \$outbuffer)
 select($stdh);
 $|++;
 #*STDOUT = $stdh;
-
-my %exec_map = (
-   'perl4' =>    {bin => '/perl5/perlbrew/perls/perl-4.036/bin/perl'},
-   'perl5.5' =>  {bin => '/perl5/perlbrew/perls/perl-5.005_04/bin/perl'},
-   'perl5.6' =>  {bin => '/perl5/perlbrew/perls/perl-5.6.2/bin/perl'},
-   'perl5.8' =>  {bin => '/perl5/perlbrew/perls/perl-5.8.9/bin/perl'},
-   'perl5.10' => {bin => '/perl5/perlbrew/perls/perl-5.10.1/bin/perl'},
-   'perl5.12' => {bin => '/perl5/perlbrew/perls/perl-5.12.5/bin/perl'},
-   'perl5.14' => {bin => '/perl5/perlbrew/perls/perl-5.14.4/bin/perl'},
-   'perl5.16' => {bin => '/perl5/perlbrew/perls/perl-5.16.3/bin/perl'},
-   'perl5.18' => {bin => '/perl5/perlbrew/perls/perl-5.18.4/bin/perl'},
-   'perl5.20' => {bin => '/perl5/perlbrew/perls/perl-5.20.3/bin/perl'},
-   'perl5.22' => {bin => '/perl5/perlbrew/perls/perl-5.22.3/bin/perl'},
-   'perl5.24' => {bin => '/perl5/perlbrew/perls/perl-5.24.0/bin/perl'},
-   'ruby'     => {bin => '/usr/bin/ruby2.1'},
-   'node'     => {bin => '/langs/node-custom/bin/node'},
-);
 
 no warnings;
 
@@ -136,16 +119,6 @@ no warnings;
       print STDOUT $tidy_out;
 	}
 
-eval "use utf8; \$\343\201\257 = 42; 'ש' =~ /([\p{Bidi_Class:L}\p{Bidi_Class:R}])/";  # attempt to automatically load the utf8 libraries.
-eval "use utf8; [ 'ß' =~ m/^\Qss\E\z/i ? 'True' : 'False' ];"; # Try to grab some more utf8 libs
-eval "use utf8; [CORE::fc '€']";
-use charnames qw(:full);
-use PerlIO;
-use PerlIO::scalar;
-use Text::ParseWords;
-
-eval {"\N{SPARKLE}"}; # force loading of some of the charnames stuff
-
 # Required for perl_deparse
 use B::Deparse;
 
@@ -154,12 +127,6 @@ use B::Deparse;
 #my $JSENV_CODE = do { local $/; open my $fh, "deps/env.js"; <$fh> };
 #require 'bytes_heavy.pl';
 
-use Tie::Hash::NamedCapture;
-
- {#no warnings 'constant';
- uc "\x{666}"; #Attempt to load unicode libraries.
- lc "JONQUIÉRE";
- }
  binmode STDOUT, ":encoding(utf8)"; # Enable utf8 output.
 
 #BEGIN{ eval "use PHP::Interpreter;"; }
@@ -194,39 +161,12 @@ use Tie::Hash::NamedCapture;
 use Carp::Heavy;
 use Storable qw/nfreeze/; nfreeze([]); #Preload Nfreeze since it's loaded on demand
 
-	my $type = do { local $/=" ";
-
-    # have to do this with sysread in order to keep it from destroying STDIN for exec later.
-
-    my $q;
-    my $c;
-
-    while (sysread STDIN, $c, 1) {
-      $q .= $c;
-      last if $c eq $/;
-    }
-
-    chomp $q; $q 
-  };
-  
-  my $code = do {local $/; <STDIN>};
-  # Chomp code..
-	$code =~ s/\s*$//;
+my ($type, $code) = @_; # Take these from ARGV now
 
   # redirect STDIN to /dev/null, to avoid warnings in convoluted cases.
   # we have to leave this open for perl4, so only do this for other systems
   open STDIN, '<', '/dev/null' or die "Can't open /dev/null: $!";
 
-	# Get the nobody uid before we chroot.
-	my $nobody_uid = 65534; #getpwnam("nobody");
-	die "Error, can't find a uid for 'nobody'. Replace with someone who exists" unless $nobody_uid;
-
-	# Set the CPU LIMIT.
-	# Do this before the chroot because some of the other
-	# setrlimit calls will prevent chroot from working
-	# however at the same time we need to preload an autload file
-	# that chroot will prevent, so do it here.
-	setrlimit(RLIMIT_CPU, 10,10);
 
 # 	# Root Check
 # 	if( $< != 0 )
@@ -234,58 +174,7 @@ use Storable qw/nfreeze/; nfreeze([]); #Preload Nfreeze since it's loaded on dem
 # 		die "Not root, can't chroot or take other precautions, dying\n";
 # 	}
 
-
-	# The chroot section
-  chdir("/eval") or die $!;
-
-  # It's now safe for us to do this so that we can load modules and files provided by the user
-  push @INC, "/eval/lib";
-
-  if ($< == 0) {
-      # Here's where we actually drop our root privilege
-      $)="$nobody_uid $nobody_uid";
-      $(=$nobody_uid;
-      $<=$>=$nobody_uid;
-      POSIX::setgid($nobody_uid); #We just assume the uid is the same as the gid. Hot.
-
-
-      die "Failed to drop to nobody"
-          if $> != $nobody_uid
-          or $< != $nobody_uid;
-  }
-
-	my $kilo = 1024;
-	my $meg = $kilo * $kilo;
-	my $limit = 500 * $meg;
-
-	(
-	setrlimit(RLIMIT_VMEM, 1.5*$limit, 1.5*$limit)
-		and
-	setrlimit(RLIMIT_AS,1.5*$limit,1.5*$limit)
-		and
-	setrlimit(RLIMIT_DATA, $limit, $limit )
-		and
-	setrlimit(RLIMIT_STACK, 30 * $meg, 30*$meg )
-		and
-	setrlimit(RLIMIT_NPROC, 20,20) # CHANGED to 3 for Ruby.  Might take it away.
-		and
-	setrlimit(RLIMIT_NOFILE, 30,30)
-		and
-	setrlimit(RLIMIT_OFILE, 30,30)
-		and
-	setrlimit(RLIMIT_OPEN_MAX,30,30)
-		and
-	setrlimit(RLIMIT_LOCKS, 5,5)
-		and
-	setrlimit(RLIMIT_MEMLOCK,100,100)
-		and
-	setrlimit(RLIMIT_CPU, 10, 10)
-	)
-		or die "Failed to set rlimit: $!";
-
-  %ENV=(TZ=>'Asia/Pyongyang');
-	#setrlimit(RLIMIT_MSGQUEUE,100,100);
-
+  # This should stay in place, that way we don't let people accidentally run as root
 	die "Failed to drop root: $<" if $< == 0;
 	# close STDIN;
 
