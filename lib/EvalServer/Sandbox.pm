@@ -9,6 +9,8 @@ use Sys::Linux::Mount qw/:all/;
 my %sig_map;
 use FindBin;
 
+use EvalServer::Config;
+
 do {
   my @sig_names = split ' ', $Config{sig_name}; 
   my @sig_nums = split ' ', $Config{sig_num}; 
@@ -27,39 +29,43 @@ my $namespace = Sys::Linux::Namespace->new(private_pid => 1, no_proc => 1, priva
 # }
 #
 
+sub _rel2abs {
+  my $p = shift;
+  if ($p !~ m|^/|) {
+    $p = "$FindBin::Bin/$p";
+  }
+  return $p
+}
+
 sub run_eval {
   my $code = shift; # TODO this should be more than just code
-  my $jail_path = $FindBin::Bin."/../jail";
-  my $jail_root_path = $FindBin::Bin."/../jail_root";
+  my $language = shift;
+  my $files = shift;
+  my $jail_path = Path::Tiny->tempdir;
+  my $jail_root_path = _rel2abs config->sandbox->jail_root // die "No path provided for jail";
 
 	my $filename = '/eval/elib/eval.pl';
 
-  $namespace->run(code => sub {
-    my @binds = (
-      {src => $jail_root_path,    target => "/"},
-      {src => "/lib64",     target => "/lib64"},
-      {src => "/lib",             target => "/lib"},
-      {src => "/usr/lib",         target => "/usr/lib"},
-      {src => "/usr/bin",         target => "/usr/bin"},
-      {src => "/home/ryan/perl5", target => "/perl5"},
-      {src => "/home/ryan/perl5", target => "/home/ryan/perl5"},
-      {src => $FindBin::Bin."/../lib", target => "/eval/elib"},
-      {src => $FindBin::Bin."/../langs", target => "/langs"},
-    );
+  my @binds = config->sandbox->bind_mounts->@*;
 
+  $namespace->run(code => sub {
+    my $home = "/";
     for my $bind (@binds) {
-      mount($bind->{src}, $jail_path . $bind->{target}, undef, MS_BIND|MS_PRIVATE|MS_RDONLY, undef);
+      mount(_rel2abs $bind->{src}, $jail_path . $bind->{target}, undef, MS_BIND|MS_PRIVATE|MS_RDONLY, undef);
+      $home = $bind->{target} if $bind->{is_home};
     }
 
-    mount("tmpfs", $FindBin::Bin."/../jail/tmp", "tmpfs", 0, {size => "16m"});
-    mount("tmpfs", $FindBin::Bin."/../jail/tmp", "tmpfs", MS_PRIVATE, {size => "16m"});
+    mount("tmpfs", "$jail_path/tmp", "tmpfs", 0, {size => config->sandbox->tmpfs_size});
+    mount("tmpfs", "$jail_path/tmp", "tmpfs", MS_PRIVATE, {size => config->sandbox->tmpfs_size});
 
     chdir($jail_path) or die "Jail not made, see bin/makejail.sh";
     chroot($jail_path) or die $!;
+    chdir($home) or die "Couldn't chdir to $home";
+   
+    # TODO move more shit from the wrapper script to here.
 
-    
     #system("/perl5/perlbrew/perls/perlbot-inuse/bin/perl", $filename); 
-    system($^X, $filename); 
+    system($^X, $filename, $language, $code); 
     my ($exit, $signal) = (($?&0xFF00)>>8, $?&0xFF);
 
     if ($exit) {
@@ -69,6 +75,9 @@ sub run_eval {
      print "[Died $signame]";
     }
   });
+}
+
+sub set_resource_limits {
 }
 
 1;

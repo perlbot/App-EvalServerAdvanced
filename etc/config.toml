@@ -2,47 +2,32 @@
 port="14401"
 host="127.0.0.1"
 
-[language.perl]
-# No bin for this, just run natively.
+[sandbox]
+jail_root="../jail_root"
+bind_mounts=[
+	{src = "/lib64",           target = "/lib64"},
+	{src = "/lib",             target = "/lib"},
+	{src = "/usr/lib",         target = "/usr/lib"},
+	{src = "/usr/bin",         target = "/usr/bin"},
+	{src = "/home/ryan/perl5", target = "/perl5"},
+	{src = "/home/ryan/perl5", target = "/home/ryan/perl5"},
+	{src = "../lib",           target = "/eval/elib"},
+	{src = "../langs",         target = "/langs"},
+]
 
-[language.perl4]
-bin="/perl5/perlbrew/perls-4.0.36/bin/perl"
-
-[language."perl5.5"]
-bin="/perl5/perlbrew/perls-5.005_04/bin/perl"
-
-[language."perl5.6"]
-bin="/perl5/perlbrew/perls-5.6.2/bin/perl"
-
-[language."perl5.8"]
-bin="/perl5/perlbrew/perls-5.8.9/bin/perl"
-
-[language."perl5.10"]
-bin="/perl5/perlbrew/perls-5.10.1/bin/perl"
-
-[language."perl5.12"]
-bin="/perl5/perlbrew/perls-5.12.5/bin/perl"
-
-[language."perl5.14"]
-bin="/perl5/perlbrew/perls-5.14.4/bin/perl"
-
-[language."perl5.16"]
-bin="/perl5/perlbrew/perls-5.16.3/bin/perl"
-
-[language."perl5.18"]
-bin="/perl5/perlbrew/perls-5.18.4/bin/perl"
-
-[language."perl5.20"]
-bin="/perl5/perlbrew/perls-5.20.3/bin/perl"
-
-[language."perl5.22"]
-bin="/perl5/perlbrew/perls-5.22.3/bin/perl"
-
-[language."perl5.24"]
-bin="/perl5/perlbrew/perls-5.24.0/bin/perl"
-
-[language.ruby]
-bin="/usr/bin/ruby2.1"
-
-[language.node]
-bin="/langs/node-custom/bin/node"
+[language]
+"perl"={}
+"perl4"={bin="/perl5/perlbrew/perls-4.0.36/bin/perl"}
+"perl5.5"={bin="/perl5/perlbrew/perls-5.005_04/bin/perl"}
+"perl5.6"={bin="/perl5/perlbrew/perls-5.6.2/bin/perl"}
+"perl5.8"={bin="/perl5/perlbrew/perls-5.8.9/bin/perl"}
+"perl5.10"={bin="/perl5/perlbrew/perls-5.10.1/bin/perl"}
+"perl5.12"={bin="/perl5/perlbrew/perls-5.12.5/bin/perl"}
+"perl5.14"={bin="/perl5/perlbrew/perls-5.14.4/bin/perl"}
+"perl5.16"={bin="/perl5/perlbrew/perls-5.16.3/bin/perl"}
+"perl5.18"={bin="/perl5/perlbrew/perls-5.18.4/bin/perl"}
+"perl5.20"={bin="/perl5/perlbrew/perls-5.20.3/bin/perl"}
+"perl5.22"={bin="/perl5/perlbrew/perls-5.22.3/bin/perl"}
+"perl5.24"={bin="/perl5/perlbrew/perls-5.24.0/bin/perl"}
+ruby={bin="/usr/bin/ruby2.1"}
+node={bin="/langs/node-custom/bin/node"}
