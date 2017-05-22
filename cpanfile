@@ -4,6 +4,7 @@ requires 'Sys::Linux::Namespace' => 0.014;
 requires 'File::Slurper' => 0;
 requires 'TOML' => 0;
 requires 'Path::Tiny' => 0;
+requires 'Unix::Mknod' => 0;
 
 # More to come
 

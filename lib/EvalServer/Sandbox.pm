@@ -10,9 +10,13 @@ my %sig_map;
 use FindBin;
 use Path::Tiny qw/path/;
 use BSD::Resource;
+use Unix::Mknod qw/makedev mknod/;
+use Fcntl qw/:mode/;
 
+use EvalServer::Log;
 use EvalServer::Config;
 use POSIX qw/_exit/;
+use Data::Dumper;
 
 do {
   my @sig_names = split ' ', $Config{sig_name}; 
@@ -35,20 +39,17 @@ sub run_eval {
   my $code = shift; # TODO this should be more than just code
   my $language = shift;
   my $files = shift;
-  my $jail_path = Path::Tiny->tempdir;
-  my $jail_root_path = _rel2abs config->sandbox->jail_root // die "No path provided for jail";
+  my $work_path = Path::Tiny->tempdir("eval-XXXXXXXX");
 
 	my $filename = '/eval/elib/eval.pl';
 
-  use Carp 'cluck';
-  #cluck "run_eval called";
+  chmod(0555, $work_path); # have to fix permissions on the new / or nobody can do anything!
 
   my @binds = config->sandbox->bind_mounts->@*;
 
-  # these two MUST happen
+  # Ensure that our code is available to the wrapper script.  might not have to live for much longer
   push @binds, {src => "../lib", target => "/eval/elib"};
-#  unshift @binds, {src => $jail_path, target => "/"};
-#  unshift @binds, {src => "/", target => "/"};
+  push @binds, {src => "../etc", target => "/eval/etc"};
 
 	# Get the nobody uid before we chroot, namespace and do other funky stuff.
 	my $nobody_uid = getpwnam("nobody");
@@ -59,7 +60,21 @@ sub run_eval {
     $|++;
     select(STDOUT);
     $|++;
+    
+    my $tmpfs_size = config->sandbox->tmpfs_size // "16m";
+    # put this all in a tmpfs, so that we don't pollute anywhere if possible.  TODO this should be overlayfs!
+    # Path::Tiny->mkpath("$jail_path/tmp/.overlayfs");
+    # mount("overlay", "/eval", "overlay", 0, {upper => "/tmp", lower=>"/eval", workdir => "$jail_path/tmp/.overlayfs"})
+
+    my $jail_path = $work_path . "/jail";
+    path($jail_path)->mkpath();
+
+    mount("tmpfs", $jail_path, "tmpfs", 0, {size => "1m"});
+    mount("tmpfs", $jail_path, "tmpfs", MS_PRIVATE, {size => "1m"});
+
+    umask(0);
     for my $bind (@binds) {
+      debug "Making $jail_path".$bind->{target};
       path($jail_path . $bind->{target})->mkpath;
       eval {
         mount(_rel2abs($bind->{src}), $jail_path . $bind->{target}, undef, MS_BIND|MS_PRIVATE|MS_RDONLY, undef)
@@ -69,19 +84,23 @@ sub run_eval {
       }
     }
 
+    # setup /tmp
     path("$jail_path/tmp")->mkpath;
-    my $tmpfs_size = config->sandbox->tmpfs_size // "16m";
     mount("tmpfs", "$jail_path/tmp", "tmpfs", 0, {size => $tmpfs_size});
     mount("tmpfs", "$jail_path/tmp", "tmpfs", MS_PRIVATE, {size => $tmpfs_size});
 
-    # TODO overlayfs?
-    # Path::Tiny->mkpath("$jail_path/tmp/.overlayfs");
-    # mount("overlay", "/eval", "overlay", 0, {upper => "/tmp", lower=>"/eval", workdir => "$jail_path/tmp/.overlayfs"})
+    # Setup /dev
+    path("$jail_path/dev")->mkpath;
+    for my $dev_name (keys config->sandbox->devices->%*) {
+      my ($type, $major, $minor) = config->sandbox->devices->$dev_name->@*;
+
+      _exit(213) unless $type eq 'c';
+      mknod("$jail_path/dev/$dev_name", S_IFCHR|0666, makedev($major, $minor));
+    }
 
     chdir($jail_path) or die "Jail was not made"; # ensure it exists before we chroot. unnecessary?
     chroot($jail_path) or die $!;
     chdir(config->sandbox->home_dir // "/tmp") or die "Couldn't chdir to the home";
-   
     # TODO move more shit from the wrapper script to here.
     set_resource_limits();
 
@@ -101,7 +120,6 @@ sub run_eval {
     # TODO make this unneeded
     #system("/perl5/perlbrew/perls/perlbot-inuse/bin/perl", $filename); 
     exec($^X, $filename, $language, $code);
-    #print "Hello World";
   });
 
   my ($exit, $signal) = (($exitcode&0xFF00)>>8, $exitcode&0xFF);

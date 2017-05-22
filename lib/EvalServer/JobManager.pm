@@ -42,15 +42,12 @@ method run_job($eval_job) {
             dup2(1,2) or _exit(212); # Setup the C side of things
             *STDERR = \*STDOUT; # Setup the perl side of things
 
-            print "---BEGIN---\n";
-            print Dumper($eval_obj);
             eval {
                 EvalServer::Sandbox::run_eval($eval_obj->{files}{__code}, $eval_obj->{language}, $eval_obj->{files});
             };
             if ($@) {
                 print "$@";
             }
-            print "----END----\n";
 
             _exit(0);
         },

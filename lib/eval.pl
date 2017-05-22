@@ -120,7 +120,7 @@ use B::Deparse;
 
  binmode STDOUT, ":encoding(utf8)"; # Enable utf8 output.
 
-  my ($type, $code) = @_; # Take these from ARGV now
+  my ($type, $code) = @ARGV; # Take these from ARGV now
 
   # redirect STDIN to /dev/null, to avoid warnings in convoluted cases.
   # we have to leave this open for perl4, so only do this for other systems
@@ -133,7 +133,7 @@ use B::Deparse;
   # Setup SECCOMP for us
   my ($profile) = ($type =~ /^([a-z]+)/ig);
   $profile = "perl" if $type eq 'deparse';
-  my $esc = EvalServer::Seccomp->new(profiles => ["lang_$profile"], exec_map => \%exec_map);
+  my $esc = EvalServer::Seccomp->new(profiles => ["lang_$profile"], exec_map => config->language);
   $esc->engage();
 	
 	# Choose which type of evaluation to perform
@@ -164,6 +164,12 @@ use B::Deparse;
 	#-----------------------------------------------------------------------------
 	sub perl_code {
 		my( $code ) = @_;
+
+    my $outbuffer = "";
+    open(my $stdh, ">", \$outbuffer);
+    select($stdh);
+    $|++;
+
 		local $@;
 		local @INC = map {s|/home/ryan||r} @INC;
 #        local $$=24601;
@@ -189,7 +195,8 @@ Biqsip biqsip 'ugh chan ghitlh lursa' nuh bey' ngun petaq qeng soj tlhej waqboch
             local $/="\n";
             local $\;
             local $,;
-            $code = "use $]; use feature qw/postderef refaliasing lexical_subs postderef_qq signatures/; use experimental 'declared_refs';\n#line 1 \"(IRC)\"\n$code";
+            #$code = "use $]; use feature qw/postderef refaliasing lexical_subs postderef_qq signatures/; use experimental 'declared_refs';\n#line 1 \"(IRC)\"\n$code";
+            $code = "use $]; use feature qw/postderef refaliasing lexical_subs postderef_qq signatures/;\n#line 1 \"(IRC)\"\n$code";
             $ret = eval $code;
           }
         }
@@ -204,6 +211,7 @@ Biqsip biqsip 'ugh chan ghitlh lursa' nuh bey' ngun petaq qeng soj tlhej waqboch
 		my $out = ref($ret) ? Dumper( $ret ) : "" . $ret;
 
 		print $out unless $outbuffer;
+    print $outbuffer;
 
 		if( $@ ) { print "ERROR: $@" }
 	}
@@ -231,16 +239,16 @@ Biqsip biqsip 'ugh chan ghitlh lursa' nuh bey' ngun petaq qeng soj tlhej waqboch
     ';
 
     unless ($version eq '4') {
-      exec($exec_map{'perl'.$version}{bin}, '-e', $wrapper) or die "Exec failed $!";
+      exec(config->language->{'perl'.$version}->bin, '-e', $wrapper) or die "Exec failed $!";
     } else {
-      exec($exec_map{'perl'.$version}{bin}, '-e', $code); # the code for perl4 is actually still in STDIN, if we try to -e it needs to write files
+      exec(config->language->{'perl'.$version}->bin, '-e', $code); # the code for perl4 is actually still in STDIN, if we try to -e it needs to write files
     }
   }
   
   sub ruby_code {
     my ($code) = @_;
 
-    exec($exec_map{'ruby'}{bin}, '-e', $code);
+    exec(config->language->ruby->bin, '-e', $code);
   }
 
   sub javascript_code {
@@ -250,7 +258,7 @@ Biqsip biqsip 'ugh chan ghitlh lursa' nuh bey' ngun petaq qeng soj tlhej waqboch
     print $ft $code;
     $ft->flush();
     STDOUT->flush();
-    exec($exec_map{'node'}{bin}, "--v8-pool-size=1", "$ft");
+    exec(config->language->node->bin, "--v8-pool-size=1", "$ft");
   }
 
 # 	sub javascript_code {
