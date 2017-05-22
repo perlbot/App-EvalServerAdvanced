@@ -1,20 +1,44 @@
 syntax = "proto3";
 
+package messages;
+
 message Priority_Realtime {}
-
 message Priority_Batch {}
-
 message Priority_Deadline {
     int64 milliseconds = 1;
 }
 
 message File {
     string filename = 1;
-    string contents = 1;
+    string contents = 2;
 }
+
 message Eval {
     string language = 1;
-    enum 
+
+    oneof priority {
+        Priority_Realtime pr_realtime = 2;
+        Priority_Batch    pr_batch = 3;
+        Priority_Deadline pr_deadline = 4;
+    }
+
+    int64 sequence = 5; // used to accept multiple jobs
+    repeated File files = 6;
 }
+
+// Stuff sent to the client
+
+// Cancel an inflight eval on your session
+message CancelEval {
+    int64 sequence = 1;
+}
+
 message EvalResponse {
+    int64 sequence = 1;
+    string contents = 2;
+}
+
+message Warning {
+    int64 type = 1;
+    string message = 2;
 }
