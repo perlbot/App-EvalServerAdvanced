@@ -2,18 +2,18 @@ syntax = "proto3";
 
 package messages;
 
-message Priority_Realtime {}
-message Priority_Batch {}
-message Priority_Deadline {
-    int64 milliseconds = 1;
-}
-
-message File {
-    string filename = 1;
-    string contents = 2;
-}
-
 message Eval {
+    message Priority_Realtime {}
+    message Priority_Batch {}
+    message Priority_Deadline {
+        int64 milliseconds = 1;
+    }
+
+    message File {
+        string filename = 1;
+        string contents = 2;
+    }
+
     string language = 1;
 
     oneof priority {
