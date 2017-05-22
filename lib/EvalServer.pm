@@ -34,15 +34,20 @@ sub run {
 
   my $evalobj = {
     files => {
-      __code => "print 1"
+      __code => 'my $t = rand()*15; print $t; sleep $t'
     },
     language => "perl",
     priority => "realtime"
   };
 
-  my ($future) = $self->jobman->add_job($evalobj);
-  my @res = $future->get();
-  print Dumper({r=>\@res, e=>$@});
+  my @futures = map {$self->jobman->add_job({%$evalobj})} 0..3;
+
+  $|++;
+
+  for my $f (@futures) {
+    my @res = eval{$f->get()};
+    print Dumper({pid => $$, r=>\@res, e=>$@});
+  }
 }
 
 1;

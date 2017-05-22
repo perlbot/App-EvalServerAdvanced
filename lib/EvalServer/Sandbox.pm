@@ -74,7 +74,6 @@ sub run_eval {
 
     umask(0);
     for my $bind (@binds) {
-      debug "Making $jail_path".$bind->{target};
       path($jail_path . $bind->{target})->mkpath;
       eval {
         mount(_rel2abs($bind->{src}), $jail_path . $bind->{target}, undef, MS_BIND|MS_PRIVATE|MS_RDONLY, undef)
