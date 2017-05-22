@@ -55,17 +55,19 @@ sub run_eval {
 	die "Error, can't find a uid for 'nobody'. Replace with someone who exists" unless $nobody_uid;
 
   my $exitcode = $namespace->run(code => sub {
-    local $^S=0; # hide the eval that we're in from IPC::Run
-    # TODO investigate why this is needed
-    $SIG{__DIE__} = sub {print STDERR "e: ", $^S, "\n"; die @_ if $^S; print STDERR @_; _exit(1)};
-
+    select(STDERR);
+    $|++;
+    select(STDOUT);
+    $|++;
     for my $bind (@binds) {
-
       path($jail_path . $bind->{target})->mkpath;
-      mount(_rel2abs($bind->{src}), $jail_path . $bind->{target}, undef, MS_BIND|MS_PRIVATE|MS_RDONLY, undef);
+      eval {
+        mount(_rel2abs($bind->{src}), $jail_path . $bind->{target}, undef, MS_BIND|MS_PRIVATE|MS_RDONLY, undef)
+      };
+      if ($@) {
+        die "Failed to mount ", _rel2abs($bind->{src}), " to ", $jail_path . $bind->{target}, ": $@\n";
+      }
     }
-
-    exit(2);
 
     path("$jail_path/tmp")->mkpath;
     my $tmpfs_size = config->sandbox->tmpfs_size // "16m";
@@ -75,7 +77,6 @@ sub run_eval {
     # TODO overlayfs?
     # Path::Tiny->mkpath("$jail_path/tmp/.overlayfs");
     # mount("overlay", "/eval", "overlay", 0, {upper => "/tmp", lower=>"/eval", workdir => "$jail_path/tmp/.overlayfs"})
-    print "HELLO WORLD\n";
 
     chdir($jail_path) or die "Jail was not made"; # ensure it exists before we chroot. unnecessary?
     chroot($jail_path) or die $!;
@@ -99,8 +100,8 @@ sub run_eval {
 
     # TODO make this unneeded
     #system("/perl5/perlbrew/perls/perlbot-inuse/bin/perl", $filename); 
-    #exec($^X, $filename, $language, $code);
-    print "Hello World";
+    exec($^X, $filename, $language, $code);
+    #print "Hello World";
   });
 
   my ($exit, $signal) = (($exitcode&0xFF00)>>8, $exitcode&0xFF);
@@ -111,8 +112,6 @@ sub run_eval {
     my $signame = $sig_map{$signal} // $signal;
     print "[Died $signame]";
   }
-
-  _exit(0);
 }
 
 sub set_resource_limits {

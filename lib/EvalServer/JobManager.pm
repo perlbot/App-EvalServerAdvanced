@@ -6,6 +6,7 @@ use warnings;
 use Data::Dumper;
 use Moo;
 use EvalServer::Config;
+use EvalServer::Log;
 use Function::Parameters;
 use POSIX qw/dup2 _exit/;
 
@@ -24,7 +25,45 @@ method add_job($eval_obj) {
     return $job;
 }
 
+method run_job($eval_job) {
+    my $eval_obj = $eval_job->{eval_obj};
+    my $job_future = $eval_job->{future};
+    my $out = '';
+    my $in = '';
+    my $proc_future = $self->loop->timeout_future(after => config->jobmanager->timeout // 10);
+    
+    my $proc;
+    $proc_future->on_ready($job_future)
+                ->on_ready(sub {$proc->kill(15) if $proc->is_running}); # kill the process
+
+    $proc = IO::Async::Process->new(
+        code => sub {
+            close(STDERR);
+            dup2(1,2) or _exit(212); # Setup the C side of things
+            *STDERR = \*STDOUT; # Setup the perl side of things
+
+            print "---BEGIN---\n";
+            print Dumper($eval_obj);
+            eval {
+                EvalServer::Sandbox::run_eval($eval_obj->{files}{__code}, $eval_obj->{language}, $eval_obj->{files});
+            };
+            if ($@) {
+                print "$@";
+            }
+            print "----END----\n";
+
+            _exit(0);
+        },
+        stdout => {into => \$out},
+        stdin => {from => $in},
+        on_finish => sub {$job_future->done($out)}
+    );
+
+    $self->loop->add($proc);
+}
+
 method tick() {
+    debug "Tick";
     if ($self->workers->@* < config->jobmanager->max_workers) {
         my $rtcount =()= $self->jobs->{realtime}->@*;
         # TODO implement deadline jobs properly
@@ -33,26 +72,7 @@ method tick() {
             my $candidate = shift $self->jobs->{$prio}->@*;
             next unless $candidate;
 
-            my $job_future = $candidate->{future};
-            my $out = '';
-            my $in = '';
-            my $proc_future = $self->loop->timeout_future(after => config->jobmanager->timeout // 10);
-            
-            $proc_future->on_ready($job_future)
-                        ->on_ready(sub {$proc->kill(15)}); # kill the process
-
-            my $proc = IO::Async::Process->new(
-                code => sub {
-                    close(STDERR);
-                    dup2(1,2) or _exit(212); # Setup the C side of things
-                    *STDERR = \*STDOUT; # Setup the perl side of things
-
-
-                },
-                into => \$out,
-                from => $in,
-                on_finish => sub {$job_future->done($out)}
-            );
+            $self->run_job($candidate);
 
             return 1;
         }
@@ -62,3 +82,5 @@ method tick() {
         return 0; # No free workers
     }
 }
+
+1;
