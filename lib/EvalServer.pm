@@ -45,7 +45,7 @@ method init {
             #$stream->write("Got message of type: ".ref($message)."\n");
             $$buffref = $newbuf;
 
-            if ($message->isa("ESP::Eval")) {
+            if ($message->isa("EvalServer::Protocol::Eval")) {
               my $sequence = $message->sequence;
 
               my $prio = ($message->prio->has_pr_deadline ? "deadline" :
@@ -72,7 +72,7 @@ method init {
               });
 
             } else {
-              my $response = encode_message(warning => "Got unhandled packet type, ". ref($message));
+              my $response = encode_message(warning => {message => "Got unhandled packet type, ". ref($message)});
               $stream->write($response);
             }
           }

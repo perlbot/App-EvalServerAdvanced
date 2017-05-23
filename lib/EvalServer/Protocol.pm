@@ -12,13 +12,10 @@ use Function::Parameters;
 use Exporter 'import';
 our @EXPORT = qw/decode_message encode_message/;
 
-# TODO this should be more reliable
-my $path = path($FindBin::Bin . "/../lib/EvalServer/protocol.proto");
+my $path = path(__FILE__)->parent->child("protocol.proto");
 
-# load_file tries to allocate >100TB of ram.  Not sure why.
-open(my $fh, "<", $path->realpath);
-my $proto = do {local $/; <$fh>};
-close($fh);
+# load_file tries to allocate >100TB of ram.  Not sure why, so we'll just read it ourselves
+my $proto = $path->slurp_raw;
 
 my $gpb = Google::ProtocolBuffers::Dynamic->new();
 
