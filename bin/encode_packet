@@ -1,0 +1,22 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+use Data::Dumper;
+use FindBin;
+use lib $FindBin::Bin . "/../lib";
+
+use EvalServer::Protocol;
+
+my $message = EvalServer::Protocol::encode_message(
+    "eval",
+    {sequence => 1, 
+    files => [{filename=>"foo.pl", contents=>"bitches"}],
+    prio => {pr_realtime => {}},
+    language=>"perl"}
+    );
+
+print Dumper($message);
+
+#my $decode = ESP::Eval->decode($message);
+print Dumper(EvalServer::Protocol::decode_message($message ));
