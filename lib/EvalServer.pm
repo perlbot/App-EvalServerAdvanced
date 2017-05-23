@@ -8,6 +8,7 @@ use EvalServer::Config;
 use EvalServer::Sandbox;
 use EvalServer::JobManager;
 use Function::Parameters;
+use EvalServer::Protocol;
 
 use Data::Dumper;
 use POSIX qw/_exit/;
@@ -22,6 +23,7 @@ has listener => (is => 'rw');
 
 method init {
   return if $self->_inited();
+  my $es_self = $self;
 
   my $listener = $self->loop->listen(
     service => config->evalserver->port,
@@ -30,9 +32,45 @@ method init {
     on_stream => fun ($stream) {
       $stream->configure(
         on_read => method ($buffref, $eof) {
-          $self->write($$buffref);
-          $$buffref = '';
-          0
+          my ($res, $message, $newbuf) = eval{decode_message($$buffref)};
+
+          # We had an error when decoding the incoming packets, tell them and close the connection.
+          if ($@) {
+            my $message = encode_message(warning => {message => $@});
+            $stream->write($message);
+            $stream->close_when_empty();
+          }
+
+          if ($res) {
+            #$stream->write("Got message of type: ".ref($message)."\n");
+            $$buffref = $newbuf;
+
+            if ($message->isa("ESP::Eval")) {
+              my $sequence = $message->sequence;
+
+              my $evalobj = {
+                files => {map {
+                      ($_->filename => $_->contents)
+                  } $message->{files}->@*},
+                priority => 'realtime', # TODO
+                language => $message->language,
+              };
+
+              my $future = $es_self->jobman->add_job($evalobj);
+              
+              $future->on_ready(fun ($future) {
+                my $output = $future->get();
+                my $response = encode_message(response => {sequence => $sequence, contents => $output});
+                $stream->write($response);
+              });
+
+            } else {
+              my $response = encode_message(warning => "Got unhandled packet type, ". ref($message));
+              $stream->write($response);
+            }
+          }
+
+          return 0;
         }
       );
 

@@ -9,6 +9,9 @@ use Google::ProtocolBuffers::Dynamic;
 use Path::Tiny qw/path/;
 use Function::Parameters;
 
+use Exporter 'import';
+our @EXPORT = qw/decode_message encode_message/;
+
 # TODO this should be more reliable
 my $path = path($FindBin::Bin . "/../lib/EvalServer/protocol.proto");
 
