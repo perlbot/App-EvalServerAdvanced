@@ -48,12 +48,19 @@ method init {
             if ($message->isa("ESP::Eval")) {
               my $sequence = $message->sequence;
 
+              my $prio = ($message->prio->has_pr_deadline ? "deadline" :
+                         ($message->prio->has_pr_batch    ? "batch" : "realtime"));
+
               my $evalobj = {
                 files => {map {
                       ($_->filename => $_->contents)
                   } $message->{files}->@*},
-                priority => 'realtime', # TODO
+                priority => $prio,
                 language => $message->language,
+              };
+
+              if ($prio eq 'deadline') {
+                $evalobj->{priority_deadline} = $message->prio->pr_deadline->milliseconds;  
               };
 
               my $future = $es_self->jobman->add_job($evalobj);
@@ -89,28 +96,10 @@ method init {
 }
 
 method run {
-  #print Dumper(config);
   $self->init();
   $self->loop->run();
 
   return;
-
-  my $evalobj = {
-    files => {
-      __code => 'my $t = rand()*15; print $t; sleep $t'
-    },
-    language => "perl",
-    priority => "realtime"
-  };
-
-  my @futures = map {$self->jobman->add_job({%$evalobj})} 0..3;
-
-  $|++;
-
-  for my $f (@futures) {
-    my @res = eval{$f->get()};
-    print Dumper({pid => $$, r=>\@res, e=>$@});
-  }
 }
 
 1;

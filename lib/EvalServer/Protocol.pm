@@ -24,10 +24,10 @@ my $gpb = Google::ProtocolBuffers::Dynamic->new();
 
 $gpb->load_string("protocol.proto", $proto);
 
-$gpb->map({ pb_prefix => "messages", prefix => "ESP", options => {accessor_style => 'single_accessor'} });
+$gpb->map({ pb_prefix => "messages", prefix => "EvalServer::Protocol", options => {accessor_style => 'single_accessor'} });
 
 fun encode_message($type, $obj) {
-    my $message = ESP::Packet->encode({$type => $obj});
+    my $message = EvalServer::Protocol::Packet->encode({$type => $obj});
 
     # 8 byte header, 0x0000_0000 0x1234_5678
     # first 4 bytes are reserved for future fuckery, last 4 are length of the message in octets
@@ -41,7 +41,7 @@ fun decode_message($buffer) {
     my $header = substr($buffer, 0, 8); # grab the header
     my ($reserved, $length) = unpack("NN", $header);
 
-    die "Undecodable message" if ($reserved != 0);
+    die "Undecodable header" if ($reserved != 0);
     
     # Packet isn't ready yet
     return (0, undef, undef) if (length($buffer) - 8 < $length);
@@ -49,7 +49,7 @@ fun decode_message($buffer) {
     my $message_bytes = substr($buffer, 8, $length);
     substr($buffer, 0, $length+8, "");
 
-    my $message = ESP::Packet->decode($message_bytes);
+    my $message = EvalServer::Protocol::Packet->decode($message_bytes);
     my ($k) = keys %$message;
 
     die "Undecodable message" unless ($k);
