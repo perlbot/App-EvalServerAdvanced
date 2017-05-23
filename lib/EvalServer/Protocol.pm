@@ -15,7 +15,7 @@ our @EXPORT = qw/decode_message encode_message/;
 my $path = path(__FILE__)->parent->child("protocol.proto");
 
 # load_file tries to allocate >100TB of ram.  Not sure why, so we'll just read it ourselves
-my $proto = $path->slurp_raw;
+my $proto = $path->slurp_utf8;
 
 my $gpb = Google::ProtocolBuffers::Dynamic->new();
 
