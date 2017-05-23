@@ -11,7 +11,6 @@ use Function::Parameters;
 
 # TODO this should be more reliable
 my $path = path($FindBin::Bin . "/../lib/EvalServer/protocol.proto");
-debug $path->realpath;
 
 # load_file tries to allocate >100TB of ram.  Not sure why.
 open(my $fh, "<", $path->realpath);
@@ -49,6 +48,8 @@ fun decode_message($buffer) {
 
     my $message = ESP::Packet->decode($message_bytes);
     my ($k) = keys %$message;
+
+    die "Undecodable message" unless ($k);
 
     return (1, $message->$k, $buffer);
 };
