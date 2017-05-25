@@ -7,6 +7,7 @@ use FindBin;
 use lib $FindBin::Bin . "/../lib";
 use Term::ReadLine;
 use IO::Async::Loop;
+use IO::Async::Stream;
 
 use EvalServer::Protocol;
 
@@ -16,29 +17,53 @@ use EvalServer::Protocol;
 my $loop = IO::Async::Loop->new();
 my $term = Term::ReadLine->new("Erepl");
 my $seq = 1;
-my $handle =  $loop->connect(
+
+my $connect_future = $loop->new_future();
+
+$loop->connect(
     addr => {
        family   => "inet",
        socktype => "stream",
        port     => 14401,
        ip       => "localhost",
     },
-    on_read => sub {
-        my ($bufref, $eof) = @_;
+    on_stream => sub {
+        my $stream = shift;
 
-        my ($res, $message, $nbuf) = decode_message($$bufref);
-        if ($res) {
-            $$bufref = $nbuf;
-            print Dumper($message);
-        }
-    }
- )->get;
-print Dumper($handle);
+        $stream->configure(
+            on_read => sub {
+                my ($self, $bufref, $eof) = @_;
+
+                if ($eof) {
+                    print "Disconnected\n";
+                    use Carp qw/cluck/;
+                    cluck "FOO\n";
+                    exit(1);
+                }
+                print "Got data\n";
+
+                my ($res, $message, $nbuf) = decode_message($$bufref);
+                if ($res) {
+                    $$bufref = $nbuf;
+                    print Dumper($message);
+                }
+
+                return 1;
+            }
+        );
+
+        $loop->add($stream);
+        $connect_future->done($stream);
+    },
+    on_connect_error => sub {die "no connect"}
+ );
+
+my $stream = $connect_future->get;
 
 $term->event_loop(sub {
   my $data = shift;
   $data->[1] = $loop->new_future;
-  $data->[1]->await();
+  $data->[1]->get;
 }, sub {
   my $fh = shift;
   my $data = [];
@@ -46,12 +71,12 @@ $term->event_loop(sub {
   $data;
 });
 
-
-while (my $line = $term->readline("$seq>")) {
+while (my $line = $term->readline("$seq> ")) {
   my $eval = {language => 'perl', sequence => $seq, prio => {pr_realtime => {}}, files => [{filename => "__code", contents => $line}]};
 
   my $message = encode_message(eval => $eval);
   $seq++;
-  print "Sent!\n";
-  $handle->print($message);
+  print "Sending\n";
+  $stream->write($message);
+  print "Sent\n";
 }
