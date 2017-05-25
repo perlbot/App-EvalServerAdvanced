@@ -1,0 +1,57 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+use Data::Dumper;
+use FindBin;
+use lib $FindBin::Bin . "/../lib";
+use Term::ReadLine;
+use IO::Async::Loop;
+
+use EvalServer::Protocol;
+
+
+
+
+my $loop = IO::Async::Loop->new();
+my $term = Term::ReadLine->new("Erepl");
+my $seq = 1;
+my $handle =  $loop->connect(
+    addr => {
+       family   => "inet",
+       socktype => "stream",
+       port     => 14401,
+       ip       => "localhost",
+    },
+    on_read => sub {
+        my ($bufref, $eof) = @_;
+
+        my ($res, $message, $nbuf) = decode_message($$bufref);
+        if ($res) {
+            $$bufref = $nbuf;
+            print Dumper($message);
+        }
+    }
+ )->get;
+print Dumper($handle);
+
+$term->event_loop(sub {
+  my $data = shift;
+  $data->[1] = $loop->new_future;
+  $data->[1]->await();
+}, sub {
+  my $fh = shift;
+  my $data = [];
+  $data->[0] = $loop->watch_io(handle => $fh, on_read_ready => sub { $data->[1]->done });
+  $data;
+});
+
+
+while (my $line = $term->readline("$seq>")) {
+  my $eval = {language => 'perl', sequence => $seq, prio => {pr_realtime => {}}, files => [{filename => "__code", contents => $line}]};
+
+  my $message = encode_message(eval => $eval);
+  $seq++;
+  print "Sent!\n";
+  $handle->print($message);
+}
