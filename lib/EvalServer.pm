@@ -9,6 +9,7 @@ use EvalServer::Sandbox;
 use EvalServer::JobManager;
 use Function::Parameters;
 use EvalServer::Protocol;
+use EvalServer::Log;
 
 use Data::Dumper;
 use POSIX qw/_exit/;
@@ -21,6 +22,16 @@ has _inited => (is => 'rw', default => 0);
 has jobman => (is => 'ro', default => sub {EvalServer::JobManager->new(loop => $_[0]->loop)});
 has listener => (is => 'rw');
 
+has session_counter => (is => 'rw', default => 0);
+has sessions => (is => 'ro', default => sub {+{}});
+
+method new_session_id() {
+  my $c = $self->session_counter + 1;
+  $self->session_counter($c);
+
+  return $c;
+}
+
 method init {
   return if $self->_inited();
   my $es_self = $self;
@@ -30,14 +41,35 @@ method init {
     host => config->evalserver->host,
     socktype => 'stream',
     on_stream => fun ($stream) {
+      my $session_id = $self->new_session_id;
+      $self->sessions->{$session_id} = {}; # init the session
+
+      my $close_session = sub {
+        debug "Closing session $session_id! ";
+        for my $sequence (keys $self->sessions->{$session_id}{jobs}->%*) {
+          my $job = $self->sessions->{$session_id}{jobs}{$sequence};
+          
+          $job->{future}->fail("Session ended") unless $job->{future}->is_ready;
+          $job->{canceled} = 1; # Mark them as canceled
+        }
+
+        delete $self->sessions->{$session_id}; # delete the session references
+      };
+
       $stream->configure(
+        on_read_eof => sub {debug "read_eof"; $close_session->()},
+        on_write_eof => sub {debug "write_eof"; $close_session->()},
+
         on_read => method ($buffref, $eof) {
           my ($res, $message, $newbuf) = eval{decode_message($$buffref)};
+          debug sprintf("packet decode %d %d %d: %d", $res, length($message//''), length($newbuf//''), $eof);
 
           # We had an error when decoding the incoming packets, tell them and close the connection.
           if ($@) {
+            debug "Session error, decoding packet. $@";
             my $message = encode_message(warning => {message => $@});
             $stream->write($message);
+            $close_session->();
             $stream->close_when_empty();
           }
 
@@ -59,16 +91,38 @@ method init {
                 language => $message->language,
               };
 
+              debug Dumper($evalobj);
+
               if ($prio eq 'deadline') {
                 $evalobj->{priority_deadline} = $message->prio->pr_deadline->milliseconds;  
               };
 
-              my $future = $es_self->jobman->add_job($evalobj);
+              my $job = $es_self->jobman->add_job($evalobj);
+              my $future = $job->{future};
+              debug "Got job and future";
+
+              # Log the job for the session. Cancel any in progress with the same sequence.
+              if ($es_self->sessions->{$session_id}{jobs}{$sequence}) {
+                my $job = $self->sessions->{$session_id}{jobs}{$sequence};
+                
+                $job->{future}->fail("Session ended") unless $job->{future}->is_ready;
+                $job->{canceled} = 1; # Mark them as canceled
+
+                delete $es_self->sessions->{$session_id}{jobs}{$sequence};
+              }
+              $es_self->sessions->{$session_id}{jobs}{$sequence} = $job;
               
               $future->on_ready(fun ($future) {
-                my $output = $future->get();
-                my $response = encode_message(response => {sequence => $sequence, contents => $output});
-                $stream->write($response);
+                my $output = eval {$future->get()};
+                if ($@) {
+                  my $response = encode_message(warning => {message => "$@" });
+                  $stream->write($response);
+                } else {
+                  my $response = encode_message(response => {sequence => $sequence, contents => $output});
+                  $stream->write($response);
+                }
+
+                delete $es_self->sessions->{$session_id}{jobs}{$sequence}; # get rid of the references, so we don't leak
               });
 
             } else {

@@ -44,6 +44,7 @@ message EvalResponse {
 }
 
 message Warning {
+    int64 sequence = 3;
     int64 type = 1;
     string message = 2;
 }

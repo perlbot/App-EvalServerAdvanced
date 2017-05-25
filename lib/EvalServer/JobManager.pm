@@ -15,12 +15,14 @@ has workers => (is => 'ro', builder => sub {+{}});
 has jobs => (is => 'ro', builder => sub {+{}});
 
 method add_job($eval_obj) {
-    my $job = $self->loop->new_future();
+    my $job_fut = $self->loop->new_future();
     my $prio = $eval_obj->{priority} // "realtime";
 
-    push $self->jobs->{$prio}->@*, {future => $job, eval_obj => $eval_obj};
+    debug "Got job, $prio";
+    my $job = {future => $job_fut, eval_obj => $eval_obj};
+    push $self->jobs->{$prio}->@*, $job;
     $self->tick(); # start anything if possible
-    $job->on_ready(sub {$self->tick()});
+    $job_fut->on_ready(sub {$self->tick()});
 
     return $job;
 }
@@ -67,13 +69,19 @@ method tick() {
         my $rtcount =()= $self->jobs->{realtime}->@*;
         # TODO implement deadline jobs properly
 
-        for my $prio (qw/realtime deadline batch/) {
-            my $candidate = shift $self->jobs->{$prio}->@*;
-            next unless $candidate;
+        JOB: for my $prio (qw/realtime deadline batch/) {
+            # Try to find a non-cancled job
+            $self->jobs->{$prio} //= [];
+            debug "Searching $prio, ".$self->jobs->{$prio}->@*;
+            while(my $candidate = shift $self->jobs->{$prio}->@*) {
+                if ($candidate && !$candidate->{canceled}) {
+                    $candidate->{running} = 1;
 
-            $self->run_job($candidate);
+                    $self->run_job($candidate);
 
-            return 1;
+                    return 1;
+                } 
+            }
         }
 
         return 0; # No jobs found
