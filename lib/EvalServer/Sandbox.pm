@@ -15,6 +15,7 @@ use Fcntl qw/:mode/;
 
 use EvalServer::Log;
 use EvalServer::Config;
+use EvalServer::Sandbox::Internal;
 use POSIX qw/_exit/;
 use Data::Dumper;
 
@@ -61,7 +62,15 @@ sub run_eval {
     $|++;
     select(STDOUT);
     $|++;
+    binmode STDOUT, ":encoding(utf8)"; # Enable utf8 output.
+    binmode STDERR, ":encoding(utf8)"; # Enable utf8 output.
     
+    # This should end up actually reading from the IO::Async::Process stdin filehandle eventually
+    # but I'm not ready to setup the protocol for that yet.
+    # redirect STDIN to /dev/null, to avoid warnings in convoluted cases.
+    close(STDIN);
+    open STDIN, '<', '/dev/null' or die "Can't open /dev/null: $!";
+
     my $tmpfs_size = config->sandbox->tmpfs_size // "16m";
 
     my $jail_path = $work_path . "/jail";
@@ -130,9 +139,17 @@ sub run_eval {
 
     my %ENV = config->sandbox->environment->%*; # set the environment up
 
+
+    # Setup SECCOMP for us
+    my $lang_config = config->language->$language;
+    die "Language $language not configured." unless $lang_config;
+
+    my $profile = $lang_config->seccomp_profile // "default";
+    my $esc = EvalServer::Seccomp->new(profiles => [$profile], exec_map => config->language);
+    $esc->engage(); # TODO Make this optional, somehow for testing
+    
     # TODO make this unneeded
-    #system("/perl5/perlbrew/perls/perlbot-inuse/bin/perl", $filename); 
-    exec($^X, $filename, $language, $code);
+    run_code($language, $code);
   });
 
   my ($exit, $signal) = (($exitcode&0xFF00)>>8, $exitcode&0xFF);
@@ -170,6 +187,43 @@ sub set_resource_limits {
   $srl->(RLIMIT_MEMLOCK, $cfg_rlimits->MEMLOCK) and
   $srl->(RLIMIT_CPU, $cfg_rlimits->CPU)
 		or die "Failed to set rlimit: $!";
+}
+
+sub run_code {
+  my ($lang, $code) = @_;
+
+  my $lang_config = config->language->$lang;
+
+  if (my $wrapper = $lang_config->wrap_code) {
+    $code = EvalServer::Sandbox::Internal->$wrapper($lang, $code);
+  }
+
+  if (my $sub_name = $lang_config->sub()) {
+    EvalServer::Sandbox::Internal->$sub_name($lang, $code);
+    return;
+  } elsif (my $bin = $lang_config->bin()) {
+    my $arg_list = $lang_config->args // ["%FILE%"];
+    my ($file) = Path::Tiny->tempfile;
+
+    open(my $tfh, ">", "$file");
+    print $tfh $code;
+    close($tfh);
+
+    $arg_list = [map {
+      if ($_ eq '%FILE%') {
+        return "$file";
+      } elsif ($_ eq '%CODE%') {
+        return $code;
+      } else {
+        return $_;
+      }
+    } @$arg_list];
+
+    debug Dumper([$bin, @$arg_list]);
+    exec($bin, @$arg_list) or die "Couldn't exec $bin: $!";
+  } else {
+    die "No configured way to run $lang\n";
+  }
 }
 
 1;
