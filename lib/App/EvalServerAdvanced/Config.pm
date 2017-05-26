@@ -1,4 +1,4 @@
-package EvalServer::Config;
+package App::EvalServerAdvanced::Config;
 
 use v5.20.0;
 
@@ -25,7 +25,7 @@ sub load_config {
 
     if (ref $value eq 'HASH') {
       my $nv = +{map {; $_ => __SUB__->($value->{$_})} keys %$value};
-      return bless $nv, "EvalServer::Config::_magichash";
+      return bless $nv, "App::EvalServerAdvanced::Config::_magichash";
     } elsif (ref $value eq 'ARRAY') {
       return [map {__SUB__->($_)} @$value];
     } else {
@@ -46,7 +46,7 @@ sub config {
 }
 
 package
-  EvalServer::Config::_magichash;
+  App::EvalServerAdvanced::Config::_magichash;
 use Carp qw/croak/;
 
 sub DESTROY {}

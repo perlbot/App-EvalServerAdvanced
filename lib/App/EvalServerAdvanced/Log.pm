@@ -1,9 +1,9 @@
-package EvalServer::Log;
+package App::EvalServerAdvanced::Log;
 
 use strict;
 use warnings;
 use Function::Parameters;
-use EvalServer::Config;
+use App::EvalServerAdvanced::Config;
 use Exporter 'import';
 our @EXPORT=qw/debug/;
 

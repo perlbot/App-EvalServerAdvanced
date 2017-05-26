@@ -6,7 +6,7 @@ use Data::Dumper;
 use FindBin;
 use lib $FindBin::Bin . "/../lib";
 
-use EvalServer::Protocol;
+use App::EvalServerAdvanced::Protocol;
 use Time::HiRes qw/sleep/;
 
 $|++;

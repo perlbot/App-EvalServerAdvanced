@@ -1,10 +1,10 @@
-package EvalServer::Protocol;
+package App::EvalServerAdvanced::Protocol;
 
 use strict;
 use warnings;
 use Data::Dumper;
 use FindBin;
-use EvalServer::Log;
+use App::EvalServerAdvanced::Log;
 use Google::ProtocolBuffers::Dynamic;
 use Path::Tiny qw/path/;
 use Function::Parameters;
@@ -21,10 +21,10 @@ my $gpb = Google::ProtocolBuffers::Dynamic->new();
 
 $gpb->load_string("protocol.proto", $proto);
 
-$gpb->map({ pb_prefix => "messages", prefix => "EvalServer::Protocol", options => {accessor_style => 'single_accessor'} });
+$gpb->map({ pb_prefix => "messages", prefix => "App::EvalServerAdvanced::Protocol", options => {accessor_style => 'single_accessor'} });
 
 fun encode_message($type, $obj) {
-    my $message = EvalServer::Protocol::Packet->encode({$type => $obj});
+    my $message = App::EvalServerAdvanced::Protocol::Packet->encode({$type => $obj});
 
     # 8 byte header, 0x0000_0000 0x1234_5678
     # first 4 bytes are reserved for future fuckery, last 4 are length of the message in octets
@@ -46,7 +46,7 @@ fun decode_message($buffer) {
     my $message_bytes = substr($buffer, 8, $length);
     substr($buffer, 0, $length+8, "");
 
-    my $message = EvalServer::Protocol::Packet->decode($message_bytes);
+    my $message = App::EvalServerAdvanced::Protocol::Packet->decode($message_bytes);
     my ($k) = keys %$message;
 
     die "Undecodable message" unless ($k);

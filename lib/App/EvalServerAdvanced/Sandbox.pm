@@ -1,4 +1,4 @@
-package EvalServer::Sandbox;
+package App::EvalServerAdvanced::Sandbox;
 
 use strict;
 use warnings;
@@ -13,9 +13,10 @@ use BSD::Resource;
 use Unix::Mknod qw/makedev mknod/;
 use Fcntl qw/:mode/;
 
-use EvalServer::Log;
-use EvalServer::Config;
-use EvalServer::Sandbox::Internal;
+use App::EvalServerAdvanced::Log;
+use App::EvalServerAdvanced::Config;
+use App::EvalServerAdvanced::Sandbox::Internal;
+use App::EvalServerAdvanced::Seccomp;
 use POSIX qw/_exit/;
 use Data::Dumper;
 
@@ -136,7 +137,7 @@ sub run_eval {
     die "Language $language not configured." unless $lang_config;
 
     my $profile = $lang_config->seccomp_profile // "default";
-    my $esc = EvalServer::Seccomp->new(profiles => [$profile], exec_map => config->language);
+    my $esc = App::EvalServerAdvanced::Seccomp->new(profiles => [$profile], exec_map => config->language);
     $esc->engage(); # TODO Make this optional, somehow for testing
     
     # TODO make this unneeded
@@ -186,11 +187,11 @@ sub run_code {
   my $lang_config = config->language->$lang;
 
   if (my $wrapper = $lang_config->wrap_code) {
-    $code = EvalServer::Sandbox::Internal->$wrapper($lang, $code);
+    $code = App::EvalServerAdvanced::Sandbox::Internal->$wrapper($lang, $code);
   }
 
   if (my $sub_name = $lang_config->sub()) {
-    EvalServer::Sandbox::Internal->$sub_name($lang, $code);
+    App::EvalServerAdvanced::Sandbox::Internal->$sub_name($lang, $code);
     return;
   } elsif (my $bin = $lang_config->bin()) {
     my $arg_list = $lang_config->args // ["%FILE%"];

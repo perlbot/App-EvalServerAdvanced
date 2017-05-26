@@ -9,7 +9,7 @@ use Term::ReadLine;
 use IO::Async::Loop;
 use IO::Async::Stream;
 
-use EvalServer::Protocol;
+use App::EvalServerAdvanced::Protocol;
 
 sub fake_prompt {
     my $prompt = shift;

@@ -1,4 +1,4 @@
-package EvalServer::Seccomp;
+package App::EvalServerAdvanced::Seccomp;
 
 use strict;
 use warnings;

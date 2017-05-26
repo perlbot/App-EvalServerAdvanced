@@ -1,15 +1,15 @@
-package EvalServer;
+package App::EvalServerAdvanced;
 
 use strict;
-use EvalServer::Sandbox;
+use App::EvalServerAdvanced::Sandbox;
 use IO::Async::Loop;
 use IO::Async::Function;
-use EvalServer::Config;
-use EvalServer::Sandbox;
-use EvalServer::JobManager;
+use App::EvalServerAdvanced::Config;
+use App::EvalServerAdvanced::Sandbox;
+use App::EvalServerAdvanced::JobManager;
 use Function::Parameters;
-use EvalServer::Protocol;
-use EvalServer::Log;
+use App::EvalServerAdvanced::Protocol;
+use App::EvalServerAdvanced::Log;
 
 use Data::Dumper;
 use POSIX qw/_exit/;
@@ -19,7 +19,7 @@ use IPC::Run qw/harness/;
 
 has loop => (is => 'ro', lazy => 1, default => sub {IO::Async::Loop->new()});
 has _inited => (is => 'rw', default => 0);
-has jobman => (is => 'ro', default => sub {EvalServer::JobManager->new(loop => $_[0]->loop)});
+has jobman => (is => 'ro', default => sub {App::EvalServerAdvanced::JobManager->new(loop => $_[0]->loop)});
 has listener => (is => 'rw');
 
 has session_counter => (is => 'rw', default => 0);
@@ -77,7 +77,7 @@ method init {
             #$stream->write("Got message of type: ".ref($message)."\n");
             $$buffref = $newbuf;
 
-            if ($message->isa("EvalServer::Protocol::Eval")) {
+            if ($message->isa("App::EvalServerAdvanced::Protocol::Eval")) {
               my $sequence = $message->sequence;
 
               my $prio = ($message->prio->has_pr_deadline ? "deadline" :

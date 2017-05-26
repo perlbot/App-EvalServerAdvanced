@@ -1,12 +1,12 @@
-package EvalServer::JobManager;
+package App::EvalServerAdvanced::JobManager;
 use v5.24.0;
 
 use strict;
 use warnings;
 use Data::Dumper;
 use Moo;
-use EvalServer::Config;
-use EvalServer::Log;
+use App::EvalServerAdvanced::Config;
+use App::EvalServerAdvanced::Log;
 use Function::Parameters;
 use POSIX qw/dup2 _exit/;
 
@@ -43,7 +43,7 @@ method run_job($eval_job) {
             $SIG{$_} = sub {_exit(1)} for (keys %SIG);
 
             eval {
-                EvalServer::Sandbox::run_eval($eval_obj->{files}{__code}, $eval_obj->{language}, $eval_obj->{files});
+                App::EvalServerAdvanced::Sandbox::run_eval($eval_obj->{files}{__code}, $eval_obj->{language}, $eval_obj->{files});
             };
             if ($@) {
                 print "$@";
