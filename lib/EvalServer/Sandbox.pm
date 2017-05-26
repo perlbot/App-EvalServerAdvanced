@@ -48,10 +48,6 @@ sub run_eval {
 
   my @binds = config->sandbox->bind_mounts->@*;
 
-  # Ensure that our code is available to the wrapper script.  might not have to live for much longer
-  push @binds, {src => "../lib", target => "/elib"};
-  push @binds, {src => "../etc", target => "/etc"};
-
 	# Get the nobody uid before we chroot, namespace and do other funky stuff.
 	my $nobody_uid = getpwnam("nobody");
 	die "Error, can't find a uid for 'nobody'. Replace with someone who exists" unless $nobody_uid;
@@ -102,11 +98,6 @@ sub run_eval {
     my $overlay_opts = {upperdir => "$jail_path/tmp", lowerdir => "$jail_path/eval2", workdir => "$work_path/tmp/.overlayfs"};
     path("$jail_path/eval")->mkpath;
     mount("overlay", "$jail_path/eval", "overlay", 0, $overlay_opts);
-
-    # Bind mounts don't work properly through overlayfs, so use symlinks
-    # TODO finish rewriting/moving code from eval.pl to here to eliminate the exec(), and the need for these
-    symlink("/etc", "$jail_path/eval/etc");
-    symlink("/elib", "$jail_path/eval/elib");
 
     # Setup /dev
     path("$jail_path/dev")->mkpath;
@@ -211,15 +202,14 @@ sub run_code {
 
     $arg_list = [map {
       if ($_ eq '%FILE%') {
-        return "$file";
+        "$file";
       } elsif ($_ eq '%CODE%') {
-        return $code;
+        $code;
       } else {
-        return $_;
+        $_;
       }
     } @$arg_list];
 
-    debug Dumper([$bin, @$arg_list]);
     exec($bin, @$arg_list) or die "Couldn't exec $bin: $!";
   } else {
     die "No configured way to run $lang\n";

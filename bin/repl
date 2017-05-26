@@ -93,8 +93,10 @@ $term->event_loop(sub {
   $data;
 });
 
+my $lang = $ARGV[0] // "perl";
+
 while (my $line = $term->readline("$seq> ")) {
-  my $eval = {language => 'perl', sequence => $seq, prio => {pr_realtime => {}}, files => [{filename => "__code", contents => $line}]};
+  my $eval = {language => $lang, sequence => $seq, prio => {pr_realtime => {}}, files => [{filename => "__code", contents => $line}]};
 
   my $message = encode_message(eval => $eval);
   $seq++;
