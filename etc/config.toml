@@ -21,7 +21,7 @@ bind_mounts = [
 	{src = "/home/ryan/perl5", target = "/home/ryan/perl5"},
 	{src = "/mnt/mintdisk/home/ryan/perl5", target = "/mnt/mintdisk/home/ryan/perl5"},
 	{src = "../langs",         target = "/langs"},
-	{src = "../jail_root",     target = "/eval"}
+	{src = "../jail_root",     target = "/eval2"}
 ]
 
 [sandbox.devices]

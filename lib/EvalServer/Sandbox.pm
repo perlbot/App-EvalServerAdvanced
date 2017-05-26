@@ -48,34 +48,41 @@ sub run_eval {
   my @binds = config->sandbox->bind_mounts->@*;
 
   # Ensure that our code is available to the wrapper script.  might not have to live for much longer
-  push @binds, {src => "../lib", target => "/eval/elib"};
-  push @binds, {src => "../etc", target => "/eval/etc"};
+  push @binds, {src => "../lib", target => "/elib"};
+  push @binds, {src => "../etc", target => "/etc"};
 
 	# Get the nobody uid before we chroot, namespace and do other funky stuff.
 	my $nobody_uid = getpwnam("nobody");
 	die "Error, can't find a uid for 'nobody'. Replace with someone who exists" unless $nobody_uid;
 
   my $exitcode = $namespace->run(code => sub {
+    delete $SIG{CHLD};
     select(STDERR);
     $|++;
     select(STDOUT);
     $|++;
     
     my $tmpfs_size = config->sandbox->tmpfs_size // "16m";
-    # put this all in a tmpfs, so that we don't pollute anywhere if possible.  TODO this should be overlayfs!
-    # Path::Tiny->mkpath("$jail_path/tmp/.overlayfs");
-    # mount("overlay", "/eval", "overlay", 0, {upper => "/tmp", lower=>"/eval", workdir => "$jail_path/tmp/.overlayfs"})
 
     my $jail_path = $work_path . "/jail";
-    path($jail_path)->mkpath();
 
-    mount("tmpfs", $jail_path, "tmpfs", 0, {size => "1m"});
-    mount("tmpfs", $jail_path, "tmpfs", MS_PRIVATE, {size => "1m"});
+    mount("tmpfs", $work_path, "tmpfs", 0, {size => $tmpfs_size});
+    mount("tmpfs", $work_path, "tmpfs", MS_PRIVATE, {size => $tmpfs_size});
+
+    path($jail_path)->mkpath();
+    # put this all in a tmpfs, so that we don't pollute anywhere if possible.  TODO this should be overlayfs!
+    path("$work_path/tmp/.overlayfs")->mkpath();
+    # setup /tmp
+    path("$jail_path/tmp")->mkpath;
+#    mount("tmpfs", "$jail_path/tmp", "tmpfs", 0, {size => $tmpfs_size});
+#    mount("tmpfs", "$jail_path/tmp", "tmpfs", MS_PRIVATE, {size => $tmpfs_size});
+
 
     umask(0);
     for my $bind (@binds) {
       path($jail_path . $bind->{target})->mkpath;
       eval {
+        # debug Dumper(_rel2abs($bind->{src}), $jail_path . $bind->{target}, undef, MS_BIND|MS_PRIVATE|MS_RDONLY, undef);
         mount(_rel2abs($bind->{src}), $jail_path . $bind->{target}, undef, MS_BIND|MS_PRIVATE|MS_RDONLY, undef)
       };
       if ($@) {
@@ -83,10 +90,14 @@ sub run_eval {
       }
     }
 
-    # setup /tmp
-    path("$jail_path/tmp")->mkpath;
-    mount("tmpfs", "$jail_path/tmp", "tmpfs", 0, {size => $tmpfs_size});
-    mount("tmpfs", "$jail_path/tmp", "tmpfs", MS_PRIVATE, {size => $tmpfs_size});
+    my $overlay_opts = {upperdir => "$jail_path/tmp", lowerdir => "$jail_path/eval2", workdir => "$work_path/tmp/.overlayfs"};
+    path("$jail_path/eval")->mkpath;
+    mount("overlay", "$jail_path/eval", "overlay", 0, $overlay_opts);
+
+    # Bind mounts don't work properly through overlayfs, so use symlinks
+    # TODO finish rewriting/moving code from eval.pl to here to eliminate the exec(), and the need for these
+    symlink("/etc", "$jail_path/eval/etc");
+    symlink("/elib", "$jail_path/eval/elib");
 
     # Setup /dev
     path("$jail_path/dev")->mkpath;
@@ -96,6 +107,9 @@ sub run_eval {
       _exit(213) unless $type eq 'c';
       mknod("$jail_path/dev/$dev_name", S_IFCHR|0666, makedev($major, $minor));
     }
+
+    path("$jail_path/tmp")->chmod(0777);
+    path("$jail_path/eval")->chmod(0777);
 
     chdir($jail_path) or die "Jail was not made"; # ensure it exists before we chroot. unnecessary?
     chroot($jail_path) or die $!;
