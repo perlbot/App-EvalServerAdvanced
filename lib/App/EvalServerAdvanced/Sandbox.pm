@@ -43,8 +43,6 @@ sub run_eval {
   my $files = shift;
   my $work_path = Path::Tiny->tempdir("eval-XXXXXXXX");
 
-	my $filename = '/eval/elib/eval.pl';
-
   chmod(0555, $work_path); # have to fix permissions on the new / or nobody can do anything!
 
   my @binds = config->sandbox->bind_mounts->@*;
@@ -155,6 +153,8 @@ sub run_eval {
     my $main_file = ''; #TODO, define when creating files
     run_code($language, $code, $main_file);
   });
+  
+  rmdir($work_path) or warn "Couldn't remove tempdir";
 
   my ($exit, $signal) = (($exitcode&0xFF00)>>8, $exitcode&0xFF);
 
