@@ -1,16 +1,11 @@
-package EvalServer::Sandbox::Internal;
+package App::EvalServerAdvanced::Sandbox::Internal;
 
 use strict;
 use warnings;
-use EvalServer::Sandbox;
-use EvalServer::Log;
 
 use Data::Dumper;
 use B::Deparse;
 use Perl::Tidy;
-
-use EvalServer::Seccomp;
-use EvalServer::Config;
 
 # Easter eggs
 # Just a bad joke from family guy, use this module and it'll just die on you

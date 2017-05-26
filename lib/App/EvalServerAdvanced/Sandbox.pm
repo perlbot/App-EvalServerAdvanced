@@ -131,6 +131,17 @@ sub run_eval {
 
     my %ENV = config->sandbox->environment->%*; # set the environment up
 
+    # Create the other files.
+    for my $filename (keys %$files) {
+      my $contents = $files->{$filename};
+      next if ($filename eq '__code'); # skip over main exec code.  TODO make this use a real filename, with a flag
+      my $path = path($filename);
+      $path->parent()->mkpath(); # try to create the directory needed.  If it fails, the eval fails
+
+      open(my $fh, ">", $filename) or die "Can't write to $filename: $!";
+      print $fh $contents; # simple output, don't worry about encodings?
+      close($fh);
+    }
 
     # Setup SECCOMP for us
     my $lang_config = config->language->$language;
@@ -140,8 +151,9 @@ sub run_eval {
     my $esc = App::EvalServerAdvanced::Seccomp->new(profiles => [$profile], exec_map => config->language);
     $esc->engage(); # TODO Make this optional, somehow for testing
     
-    # TODO make this unneeded
-    run_code($language, $code);
+    # TODO make this accept a filename, that's already written instead of code
+    my $main_file = ''; #TODO, define when creating files
+    run_code($language, $code, $main_file);
   });
 
   my ($exit, $signal) = (($exitcode&0xFF00)>>8, $exitcode&0xFF);
