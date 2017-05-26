@@ -115,7 +115,7 @@ method init {
               $future->on_ready(fun ($future) {
                 my $output = eval {$future->get()};
                 if ($@) {
-                  my $response = encode_message(warning => {message => "$@" });
+                  my $response = encode_message(warning => {message => "$@", sequence => $sequence });
                   $stream->write($response);
                 } else {
                   my $response = encode_message(response => {sequence => $sequence, contents => $output});

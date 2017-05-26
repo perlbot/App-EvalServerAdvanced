@@ -11,7 +11,11 @@ use IO::Async::Stream;
 
 use EvalServer::Protocol;
 
-
+sub fake_prompt {
+    my $prompt = shift;
+    my @rl_term_set = @Term::ReadLine::TermCap::rl_term_set;
+    print $rl_term_set[3], $rl_term_set[0], $prompt, $rl_term_set[1], $rl_term_set[2];
+}
 
 
 my $loop = IO::Async::Loop->new();
@@ -36,16 +40,34 @@ $loop->connect(
 
                 if ($eof) {
                     print "Disconnected\n";
-                    use Carp qw/cluck/;
-                    cluck "FOO\n";
                     exit(1);
                 }
-                print "Got data\n";
 
                 my ($res, $message, $nbuf) = decode_message($$bufref);
                 if ($res) {
                     $$bufref = $nbuf;
-                    print Dumper($message);
+                    my @rl_term_set = @Term::ReadLine::TermCap::rl_term_set;
+
+                    $|++;
+                    if (ref($message) =~ /EvalResponse$/) {
+                        print "\n"; # go to a new line
+                        my $eseq = $message->sequence;  
+                        if (!$message->{canceled}) {
+                            my $lines = $message->contents;
+                            $lines =~ s/^/$eseq < /gm;
+                            print $rl_term_set[3], $lines, "\n\n";
+                            fake_prompt("$seq> ");
+                        } else {
+                            print $rl_term_set[3],"\n$eseq was canceled\n";
+                            fake_prompt("$seq> ");
+                        }
+                    } elsif (ref($message) =~ /Warning$/) {
+                        my $eseq = $message->sequence;
+                        print $rl_term_set[3],"\nWARN <$eseq> ", $message->message, "\n";
+                        fake_prompt("$seq> ");
+                    } else {
+                        die "Unhandled message: ". Dumper($message);
+                    }
                 }
 
                 return 1;
@@ -76,7 +98,5 @@ while (my $line = $term->readline("$seq> ")) {
 
   my $message = encode_message(eval => $eval);
   $seq++;
-  print "Sending\n";
   $stream->write($message);
-  print "Sent\n";
 }
