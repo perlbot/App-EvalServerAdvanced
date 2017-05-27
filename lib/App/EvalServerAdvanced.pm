@@ -157,3 +157,79 @@ method run {
 }
 
 1;
+
+__END__
+
+=pod
+
+=encoding UTF-8
+
+=head1 NAME
+
+App::EvalServerAdvanced - A more featured update to App::EvalServer
+
+=head1 VERSION
+
+version 0.001
+
+=head1 DESCRIPTION
+
+This is a complete redesign and rewrite of the original code behind App::EvalServer.
+
+This code is only BETA quality at best.  See the USE section below for more information.
+
+=head1 FEATURES
+
+Features over App::EvalServer
+
+=over 1
+
+=item Use of Linux namespaces.
+
+The chroot is accompanied by a private mounted tmpfs filesystem.  This allows a safe writable /tmp that won't be seen by anyone else.
+The evaluated code is placed in it's own PID space.  This helps prevent it from sending signals to anything else that might be running.
+
+=item Use of Seccomp
+
+More featureful sandboxing with Seccomp rules.  This helps prevent anything running from issuing any potentially dangerous system calls.
+
+=item Formal network protocol.
+
+You can send multiple requests per connection, and wait on them asynchronously.  
+This helps enable better scheduling and handling of batch actions, and allows you to cancel inflight requests.
+This also allows the cancelling, by the client, of a long running job while it's running.
+
+=back
+
+=head1 USE
+
+You'll want to take a look at the 'etc' directory in the dist for an example config.  
+Future versions will include a script for generating a configuration and environment for running
+the server.
+
+Right now you probably don't actually want to actually install this, but instead just download the dist and run from it locally.
+It's a bit difficult to use and requires root.
+
+=head1 TODO
+
+=over 1
+
+=item Make a script to create a usable environment
+
+=item Create some kind of pluggable system for specifiying additional Seccomp rules
+
+=item Create another pluggable system for extending App::EvalServer::Sandbox::Internal with additional subs
+
+=item Finish enabling full configuration of the sandbox without having to edit any code
+
+=back
+
+=head1 SEE ALSO
+
+L<App::EvalServerAdvanced::REPL>, L<App::EvalServerAdvanced::Protocol>
+
+=head1 AUTHOR
+
+Ryan Voots <simcop@cpan.org>
+
+=cut
