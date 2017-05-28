@@ -29,7 +29,7 @@ EOH
     exit(0);
 }
 
-unless defined $App::EvalServerAdvanced::Config::config_dir {
+unless (defined $App::EvalServerAdvanced::Config::config_dir) {
     print "config-dir must be set\n\n";
     displayhelp; 
 }

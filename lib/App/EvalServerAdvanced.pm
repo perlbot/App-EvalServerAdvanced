@@ -32,7 +32,7 @@ method new_session_id() {
   return $c;
 }
 
-method init {
+method init() {
   return if $self->_inited();
   my $es_self = $self;
 
@@ -141,7 +141,7 @@ method init {
     on_resolve_error => sub {die "Cannot resolve - $_[1]\n"},
     on_listen_error => sub {die "Cannot listen - $_[1]\n"},
 
-    on_listen => method {
+    on_listen => method() {
         warn "listening on: " . $self->sockhost . ':' . $self->sockport . "\n";
     },
   );
@@ -149,7 +149,7 @@ method init {
   $self->_inited(1);
 }
 
-method run {
+method run() {
   $self->init();
   $self->loop->run();
 

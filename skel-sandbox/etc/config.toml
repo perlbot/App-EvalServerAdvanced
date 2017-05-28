@@ -20,11 +20,11 @@ mount_base = "/path/to/system"
 # To create a shadow system for the evalserver
 
 bind_mounts = [
-	{src = "/lib64",           target = "/lib64"},
-	{src = "/lib",             target = "/lib"},
-	{src = "/usr/lib",         target = "/usr/lib"},
-	{src = "/usr/bin",         target = "/usr/bin"},
-	{src = "/opt/perlbrew/",   target = "/opt/perlbrew/"},
+	{src = "lib64",           target = "/lib64"},
+	{src = "lib",             target = "/lib"},
+	{src = "usr/lib",         target = "/usr/lib"},
+	{src = "usr/bin",         target = "/usr/bin"},
+	{src = "opt/perlbrew/",   target = "/opt/perlbrew/"},
 ]
 
 [sandbox.devices]
