@@ -3,9 +3,10 @@
 use strict;
 use warnings;
 
-use File::ShareDir;
+use File::ShareDir qw/module_dir/;
 use Path::Tiny;
 use File::Copy::Recursive qw/dircopy/;
+use App::EvalServerAdvanced::Sandbox;
 
 my $skel_dir = path(module_dir("App::EvalServerAdvanced::Sandbox"))->realpath;
 my $sandbox_dir = path("./sandbox")->realpath;

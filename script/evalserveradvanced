@@ -3,7 +3,7 @@
 use strict;
 use warnings;
 
-use GetOpt::Long;
+use Getopt::Long;
 
 use App::EvalServerAdvanced;
 use App::EvalServerAdvanced::Config;
