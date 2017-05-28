@@ -6,8 +6,6 @@ use warnings;
 use Config;
 use Sys::Linux::Namespace;
 use Sys::Linux::Mount qw/:all/;
-my %sig_map;
-use FindBin;
 use Path::Tiny qw/path/;
 use BSD::Resource;
 use Unix::Mknod qw/makedev mknod/;
@@ -20,6 +18,7 @@ use App::EvalServerAdvanced::Seccomp;
 use POSIX qw/_exit/;
 use Data::Dumper;
 
+my %sig_map;
 do {
   my @sig_names = split ' ', $Config{sig_name}; 
   my @sig_nums = split ' ', $Config{sig_num}; 
@@ -30,11 +29,13 @@ do {
 my $namespace = Sys::Linux::Namespace->new(private_pid => 1, no_proc => 1, private_mount => 1, private_uts => 1,  private_ipc => 0, private_sysvsem => 1);
 
 sub _rel2abs {
+  my $base = config->sandbox->mount_base;
+  die "sandbox.mount_base must be set" unless defined $base;
   my $p = shift;
   if ($p !~ m|^/|) {
-    $p = "$FindBin::Bin/$p";
+    $p = path("$base/$p")->realpath;
   }
-  return $p
+  return "".$p
 }
 
 sub run_eval {
@@ -70,6 +71,9 @@ sub run_eval {
 
     my $jail_path = $work_path . "/jail";
 
+    my $jail_home = $jail_path . "/" . (config->sandbox->home_dir // "/home");
+    my $jail_tmp  = "$jail_path/tmp";
+
     mount("tmpfs", $work_path, "tmpfs", 0, {size => $tmpfs_size});
     mount("tmpfs", $work_path, "tmpfs", MS_PRIVATE, {size => $tmpfs_size});
 
@@ -77,26 +81,35 @@ sub run_eval {
     # put this all in a tmpfs, so that we don't pollute anywhere if possible.  TODO this should be overlayfs!
     path("$work_path/tmp/.overlayfs")->mkpath();
     # setup /tmp
-    path("$jail_path/tmp")->mkpath;
-#    mount("tmpfs", "$jail_path/tmp", "tmpfs", 0, {size => $tmpfs_size});
-#    mount("tmpfs", "$jail_path/tmp", "tmpfs", MS_PRIVATE, {size => $tmpfs_size});
-
+    path($jail_tmp)->mkpath;
 
     umask(0);
     for my $bind (@binds) {
-      path($jail_path . $bind->{target})->mkpath;
+      my $src = _rel2abs($bind->{src});
+      my $target = $bind->{target};
+
+      if ($target eq config->sandbox->home_dir) {
+        # We need to use overlayfs to bring the homedir in, so it's writable inside
+        # without being writable to the outside
+
+        $target = $work_path . "/home";
+      } else {
+        $target = $jail_path . $target;
+      }
+
+      path($target)->mkpath;
+
       eval {
-        # debug Dumper(_rel2abs($bind->{src}), $jail_path . $bind->{target}, undef, MS_BIND|MS_PRIVATE|MS_RDONLY, undef);
-        mount(_rel2abs($bind->{src}), $jail_path . $bind->{target}, undef, MS_BIND|MS_PRIVATE|MS_RDONLY, undef)
+        mount($src, $target, undef, MS_BIND|MS_PRIVATE|MS_RDONLY, undef)
       };
       if ($@) {
-        die "Failed to mount ", _rel2abs($bind->{src}), " to ", $jail_path . $bind->{target}, ": $@\n";
+        die "Failed to mount ", $src, " to ", $target, ": $@\n";
       }
     }
 
-    my $overlay_opts = {upperdir => "$jail_path/tmp", lowerdir => "$jail_path/eval2", workdir => "$work_path/tmp/.overlayfs"};
-    path("$jail_path/eval")->mkpath;
-    mount("overlay", "$jail_path/eval", "overlay", 0, $overlay_opts);
+    my $overlay_opts = {upperdir => $jail_tmp, lowerdir => "$work_path/home", workdir => "$work_path/tmp/.overlayfs"};
+    path($jail_home)->mkpath;
+    mount("overlay", $jail_home, "overlay", 0, $overlay_opts);
 
     # Setup /dev
     path("$jail_path/dev")->mkpath;
@@ -108,11 +121,11 @@ sub run_eval {
     }
 
     path("$jail_path/tmp")->chmod(0777);
-    path("$jail_path/eval")->chmod(0777);
+    path($jail_home)->chmod(0777);
 
     chdir($jail_path) or die "Jail was not made"; # ensure it exists before we chroot. unnecessary?
     chroot($jail_path) or die $!;
-    chdir(config->sandbox->home_dir // "/tmp") or die "Couldn't chdir to the home";
+    chdir(config->sandbox->home_dir // "/home") or die "Couldn't chdir to the home";
     # TODO move more shit from the wrapper script to here.
     set_resource_limits();
 

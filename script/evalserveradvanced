@@ -2,10 +2,32 @@
 
 use strict;
 use warnings;
-use FindBin;
-use lib $FindBin::Bin . "/../lib";
+
+use GetOpt::Long;
 
 use App::EvalServerAdvanced;
+use App::EvalServerAdvanced::Config;
+
+my $debug;
+
+GetOptions(
+    "config-dir=s" => \$App::EvalServerAdvanced::Config::config_dir,
+    "debug" => \$debug,
+    "help", \&displayhelp,
+);
+
+sub displayhelp {
+    print <<'EOH';
+evalserveradvanced 
+  A sophisticated sandbox for running arbitrary code in a mostly safe manner.
+
+  Options
+    --config-dir  - Specify where to find all configuration files, and plugins
+    --debug       - Enable debug mode
+    --help        - Display this help
+EOH
+    exit(0);
+}
 
 my $es = App::EvalServerAdvanced->new();
 $es->run();

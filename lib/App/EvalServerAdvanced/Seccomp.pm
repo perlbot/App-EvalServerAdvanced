@@ -371,3 +371,68 @@ sub engage {
 }
 
 1;
+
+__END__
+
+=pod
+
+=encoding UTF-8
+
+=head1 NAME
+
+App::EvalServerAdvanced::Seccomp - Use of Seccomp to create a safe execution environment
+
+=head1 VERSION
+
+version 0.001
+
+=head1 DESCRIPTION
+
+This is a rule generator for setting up Linux::Seccomp rules.
+
+=head1 SECURITY
+
+This is an excercise in defense in depths.  The default rulesets 
+provide a bit of protection against accidentally running knowingly dangerous syscalls.
+
+This does not provide absolute security.  It relies on the fact that the syscalls allowed 
+are likely to be safe, or commonly required for normal programs to function properly.
+
+In particular there are two syscalls that are allowed that are involved in the Dirty COW
+kernel exploit.  C<madvise> and C<mmap>, with these two you can actually trigger the Dirty COW
+exploit.  But because the default rules restrict you from creating threads, you can't create the race
+condition needed to actually accomplish it.  So you should still take some 
+other measures to protect yourself.
+
+=head1 USE
+
+You'll want to take a look at the 'etc' directory in the dist for an example config.  
+Future versions will include a script for generating a configuration and environment for running
+the server.
+
+Right now you probably don't actually want to actually install this, but instead just download the dist and run from it locally.
+It's a bit difficult to use and requires root.
+
+=head1 TODO
+
+=over 1
+
+=item Make a script to create a usable environment
+
+=item Create some kind of pluggable system for specifiying additional Seccomp rules
+
+=item Create another pluggable system for extending App::EvalServer::Sandbox::Internal with additional subs
+
+=item Finish enabling full configuration of the sandbox without having to edit any code
+
+=back
+
+=head1 SEE ALSO
+
+L<App::EvalServerAdvanced::REPL>, L<App::EvalServerAdvanced::Protocol>
+
+=head1 AUTHOR
+
+Ryan Voots <simcop@cpan.org>
+
+=cut

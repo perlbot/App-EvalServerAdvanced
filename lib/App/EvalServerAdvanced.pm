@@ -210,6 +210,16 @@ the server.
 Right now you probably don't actually want to actually install this, but instead just download the dist and run from it locally.
 It's a bit difficult to use and requires root.
 
+=head1 SECURITY
+
+This system exercises a series of defense in depth measures.  However they are not perfect.  
+If a kernel level exploit exists to get higher privileges (Dirty COW is a good example), it could be used to write to any bind mounted directory.
+
+My recommendations for extra protection are to use a copy of a running system in the sandbox, and not actually use the /lib64 directories from the existing system.
+This wouldn't prevent someone from leaving something behind, but would prevent it from being accessed accidentally from the original system.
+
+Take a look at something like C<debootstrap> to create a skeleton debian based system to use in the sandbox.
+
 =head1 TODO
 
 =over 1

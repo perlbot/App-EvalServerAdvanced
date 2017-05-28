@@ -5,20 +5,19 @@ use v5.20.0;
 use strict;
 use warnings;
 use TOML;
-use FindBin;
-use File::Slurper qw/read_text/;
-use Data::Dumper;
+use Path::Tiny;
 
 require Exporter;
 our @ISA = qw/Exporter/;
 our @EXPORT = qw/config/;
 
 our $config;
+our $config_dir;
 
 sub load_config {
-  my $file = $FindBin::Bin."/../etc/config.toml";
+  my $file = path($config_dir)->child("config.toml");
 
-  my $data = read_text($file, "utf-8", "auto");
+  my $data = $file->slurp_utf8();
 
   my $makemagic = sub {
     my $value = shift;

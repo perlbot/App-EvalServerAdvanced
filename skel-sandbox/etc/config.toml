@@ -1,31 +1,33 @@
 [evalserver]
 port = "14401"
 host = "127.0.0.1"
-timeout = 10 # number of seconds to allow the eval to run, wall time
 debug = 1
 
 [jobmanager]
 max_workers = 6
 timeout = 11
+min_deadline = 100 # minimum number of milliseconds to allow a deadline to request
 
 [sandbox]
-# Relative paths are turned to absolute ONLY by using $FindBin::Bin
-# target path's are abolsute and only exist in the chroot
+# Relative paths are turned to absolute ONLY by using the mount_base path
+# target path's are absolute and only exist in the sandbox
 home_dir = "/eval"
+mount_base = "/path/to/system"
+
+# Be careful with these, if you mount stuff under an existing directory on your
+# system a directory will be created there in order to facilitate the private
+# bind mount.  This is part of why I recommend using debootstrap or similar
+# To create a shadow system for the evalserver
+
 bind_mounts = [
 	{src = "/lib64",           target = "/lib64"},
 	{src = "/lib",             target = "/lib"},
 	{src = "/usr/lib",         target = "/usr/lib"},
 	{src = "/usr/bin",         target = "/usr/bin"},
-	{src = "/home/ryan/perl5", target = "/perl5"},
-	{src = "/home/ryan/perl5", target = "/home/ryan/perl5"},
-	{src = "/mnt/mintdisk/home/ryan/perl5", target = "/mnt/mintdisk/home/ryan/perl5"},
-	{src = "../langs",         target = "/langs"},
-	{src = "../jail_root",     target = "/eval2"}
+	{src = "/opt/perlbrew/",   target = "/opt/perlbrew/"},
 ]
 
 [sandbox.devices]
-# MASSIVE TODO
 # Entries in /dev that must exist
 # each entry is an array, [type, major, minor]
 null = ["c", 1, 3]
