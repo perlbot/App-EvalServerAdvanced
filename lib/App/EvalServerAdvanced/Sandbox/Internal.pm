@@ -9,11 +9,13 @@ use Perl::Tidy;
 
 # Easter eggs
 # Just a bad joke from family guy, use this module and it'll just die on you
-do {package Tony::Robbins; sub import {die "Tony Robbins hungry: https://www.youtube.com/watch?v=GZXp7r_PP-w\n"}; $INC{"Tony/Robbins.pm"}=1};
+do {package 
+Tony::Robbins; sub import {die "Tony Robbins hungry: https://www.youtube.com/watch?v=GZXp7r_PP-w\n"}; $INC{"Tony/Robbins.pm"}=1};
 
 # This started out as a bad babylon 5 joke
 do {
-    package Zathras; 
+    package 
+    Zathras; 
     our $AUTOLOAD; 
     use overload '""' => sub {
         my $data = @{$_[0]{args}}? qq{$_[0]{data}(}.join(', ', map {"".$_} @{$_[0]{args}}).qq{)} : qq{$_[0]{data}};
