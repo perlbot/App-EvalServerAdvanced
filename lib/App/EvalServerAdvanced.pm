@@ -203,12 +203,10 @@ This also allows the cancelling, by the client, of a long running job while it's
 
 =head1 USE
 
-You'll want to take a look at the 'etc' directory in the dist for an example config.  
-Future versions will include a script for generating a configuration and environment for running
-the server.
+You're going to want to review at least the source of L<App::EvalServerAdvanced::Sandbox> and L<App::EvalServerAdvanced::Seccomp>.
+These two modules are responsible for most of the security features of the whole system.  Familiarity with them is HIGHLY recommended.
 
-Right now you probably don't actually want to actually install this, but instead just download the dist and run from it locally.
-It's a bit difficult to use and requires root.
+Included in this dist is a command L<esa-makesandbox> that will create a skeleton for a sandbox for you with my opinionated recommendations.
 
 =head1 SECURITY
 
@@ -220,11 +218,15 @@ This wouldn't prevent someone from leaving something behind, but would prevent i
 
 Take a look at something like C<debootstrap> to create a skeleton debian based system to use in the sandbox.
 
+=head1 WARRANTY
+
+There is none.  You use this at your own risk.  It is opinionated 
+about what is secure, but it probably isn't secure.  This software 
+will result in the hacking of everyone around you.
+
 =head1 TODO
 
 =over 1
-
-=item Make a script to create a usable environment
 
 =item Create some kind of pluggable system for specifiying additional Seccomp rules
 
