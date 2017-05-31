@@ -140,6 +140,7 @@ sub run_perl {
     local $Data::Dumper::Useqq = 1;
     local $Data::Dumper::Freezer = "dd_freeze";
 
+    no warnings;
     my $out = ref($ret) ? Dumper( $ret ) : "" . $ret;
 
     print $out unless $outbuffer;
