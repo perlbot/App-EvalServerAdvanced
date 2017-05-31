@@ -52,6 +52,7 @@ sub deparse_perl_code {
     my %methods = (map {$_ => botdeparse->can($_)} grep {botdeparse->can($_)} keys {%botdeparse::}->%*);
 
     my $dp = B::Deparse->new("-p", "-q", "-x7", "-d");
+    no warnings;
     local *B::Deparse::declare_hints = sub { '' };
     my @out;
 
