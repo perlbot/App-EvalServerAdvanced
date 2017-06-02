@@ -1,4 +1,5 @@
 package App::EvalServerAdvanced::Seccomp;
+our $VERSION = '0.014';
 
 use strict;
 use warnings;
