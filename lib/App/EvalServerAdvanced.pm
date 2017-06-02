@@ -12,6 +12,7 @@ use App::EvalServerAdvanced::JobManager;
 use Function::Parameters;
 use App::EvalServerAdvanced::Protocol;
 use App::EvalServerAdvanced::Log;
+use Encode;
 
 use Data::Dumper;
 use POSIX qw/_exit/;
@@ -85,9 +86,11 @@ method init() {
               my $prio = ($message->prio->has_pr_deadline ? "deadline" :
                          ($message->prio->has_pr_batch    ? "batch" : "realtime"));
 
+              my $encoding = $message->encoding // "utf8";
+
               my $evalobj = {
                 files => {map {
-                      ($_->filename => $_->contents)
+                      ($_->filename => eval{Encode::decode($encoding, $_->contents)}//$_->contents)
                   } $message->{files}->@*},
                 priority => $prio,
                 language => $message->language,
