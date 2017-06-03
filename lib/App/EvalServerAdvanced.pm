@@ -86,11 +86,12 @@ method init() {
               my $prio = ($message->prio->has_pr_deadline ? "deadline" :
                          ($message->prio->has_pr_batch    ? "batch" : "realtime"));
 
-              my $encoding = $message->encoding // "utf8";
+              my $encoding = eval{$message->encoding} // "utf8";
 
               my $evalobj = {
                 files => {map {
-                      ($_->filename => eval{Encode::decode($encoding, $_->contents)}//$_->contents)
+                      my $cont = eval {Encode::decode($encoding, $_->contents)} // $_->contents;
+                      ($_->filename => $cont)
                   } $message->{files}->@*},
                 priority => $prio,
                 language => $message->language,
@@ -120,10 +121,10 @@ method init() {
               $future->on_ready(fun ($future) {
                 my $output = eval {$future->get()};
                 if ($@) {
-                  my $response = encode_message(warning => {message => "$@", sequence => $sequence });
+                  my $response = encode_message(warning => {message => Encode::encode($encoding, "$@"), sequence => $sequence });
                   $stream->write($response);
                 } else {
-                  my $response = encode_message(response => {sequence => $sequence, contents => $output});
+                  my $response = encode_message(response => {sequence => $sequence, contents => Encode::encode($encoding, $output)});
                   $stream->write($response);
                 }
 

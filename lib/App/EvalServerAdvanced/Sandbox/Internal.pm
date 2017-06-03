@@ -7,6 +7,8 @@ use warnings;
 use Data::Dumper;
 use B::Deparse;
 use Perl::Tidy;
+use PerlIO;
+do {my $temp; open(my $fh, ">", \$temp); close($fh)};
 
 # Easter eggs
 # Just a bad joke from family guy, use this module and it'll just die on you

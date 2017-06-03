@@ -40,6 +40,9 @@ method run_job($eval_job) {
             close(STDERR);
             dup2(1,2) or _exit(212); # Setup the C side of things
             *STDERR = \*STDOUT; # Setup the perl side of things
+            binmode STDOUT, ":utf8";
+            binmode STDERR, ":utf8";
+            binmode STDIN, ":utf8";
 
             $SIG{$_} = sub {_exit(1)} for (keys %SIG);
 
@@ -53,8 +56,8 @@ method run_job($eval_job) {
             _exit(0);
         },
         stdout => {into => \$out},
-        stdin => {from => $in},
-        on_finish => sub { $job_future->done($out) unless $job_future->is_ready; delete $self->workers->{$proc_future}; }
+        stdin => {from => Encode::encode("utf8", $in)},
+        on_finish => sub { my $out_utf8 = Encode::decode("utf8", $out); $job_future->done($out_utf8) unless $job_future->is_ready; delete $self->workers->{$proc_future}; }
     );
 
     $proc_future = $self->loop->timeout_future(after => config->jobmanager->timeout // 10);

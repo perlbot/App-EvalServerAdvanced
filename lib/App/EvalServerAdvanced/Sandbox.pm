@@ -72,7 +72,7 @@ sub run_eval {
 
     my $jail_path = $work_path . "/jail";
 
-    my $jail_home = $jail_path . "/" . (config->sandbox->home_dir // "/home");
+    my $jail_home = $jail_path . (config->sandbox->home_dir // "/home");
     my $jail_tmp  = "$jail_path/tmp";
 
     mount("tmpfs", $work_path, "tmpfs", 0, {size => $tmpfs_size});
@@ -109,6 +109,7 @@ sub run_eval {
     }
 
     my $overlay_opts = {upperdir => $jail_tmp, lowerdir => "$work_path/home", workdir => "$work_path/tmp/.overlayfs"};
+    path("$work_path/home")->mkpath; # Make sure it's made, even if it's not being mounted
     path($jail_home)->mkpath;
     mount("overlay", $jail_home, "overlay", 0, $overlay_opts);
 
@@ -124,11 +125,12 @@ sub run_eval {
     path("$jail_path/tmp")->chmod(0777);
     path($jail_home)->chmod(0777);
 
+    # Do these before the chroot.  Just to avoid weird autoloading issues
+    set_resource_limits();
+
     chdir($jail_path) or die "Jail was not made"; # ensure it exists before we chroot. unnecessary?
     chroot($jail_path) or die $!;
     chdir(config->sandbox->home_dir // "/home") or die "Couldn't chdir to the home";
-    # TODO move more shit from the wrapper script to here.
-    set_resource_limits();
 
     # TODO Also look at making calls about dropping capabilities(2).  I don't think it's needed but it might be a good idea
     # Here's where we actually drop our root privilege
