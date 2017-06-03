@@ -1,8 +1,8 @@
 package App::EvalServerAdvanced;
 
-our $VERSION = '0.015';
-
 use strict;
+our $VERSION = '0.016';
+
 use App::EvalServerAdvanced::Sandbox;
 use IO::Async::Loop;
 use IO::Async::Function;
@@ -13,6 +13,7 @@ use Function::Parameters;
 use App::EvalServerAdvanced::Protocol;
 use App::EvalServerAdvanced::Log;
 use Encode;
+use Syntax::Keyword::Try;
 
 use Data::Dumper;
 use POSIX qw/_exit/;
@@ -77,60 +78,62 @@ method init() {
           }
 
           if ($res) {
-            #$stream->write("Got message of type: ".ref($message)."\n");
             $$buffref = $newbuf;
 
             if ($message->isa("App::EvalServerAdvanced::Protocol::Eval")) {
               my $sequence = $message->sequence;
+              try {  
+                my $prio = ($message->prio->has_pr_deadline ? "deadline" :
+                           ($message->prio->has_pr_batch    ? "batch" : "realtime"));
+                my $out_encoding = eval {$message->encoding} // "utf8";
 
-              my $prio = ($message->prio->has_pr_deadline ? "deadline" :
-                         ($message->prio->has_pr_batch    ? "batch" : "realtime"));
+                my $evalobj = {
+                  files => {map {
+                        my $file_encoding = eval {$_->encoding};
+                        my $cont = $file_encoding? Encode::decode($file_encoding, $_->contents) : $_->contents;
+                        ($_->filename => $cont)
+                    } $message->{files}->@*},
+                  priority => $prio,
+                  language => $message->language,
+                };
 
-              my $encoding = eval{$message->encoding} // "utf8";
+                debug Dumper($evalobj);
 
-              my $evalobj = {
-                files => {map {
-                      my $cont = eval {Encode::decode($encoding, $_->contents)} // $_->contents;
-                      ($_->filename => $cont)
-                  } $message->{files}->@*},
-                priority => $prio,
-                language => $message->language,
-              };
+                if ($prio eq 'deadline') {
+                  $evalobj->{priority_deadline} = $message->prio->pr_deadline->milliseconds;  
+                };
 
-              debug Dumper($evalobj);
+                my $job = $es_self->jobman->add_job($evalobj);
+                my $future = $job->{future};
+                debug "Got job and future";
 
-              if ($prio eq 'deadline') {
-                $evalobj->{priority_deadline} = $message->prio->pr_deadline->milliseconds;  
-              };
+                # Log the job for the session. Cancel any in progress with the same sequence.
+                if ($es_self->sessions->{$session_id}{jobs}{$sequence}) {
+                  my $job = $self->sessions->{$session_id}{jobs}{$sequence};
+                  
+                  $job->{future}->fail("Session ended") unless $job->{future}->is_ready;
+                  $job->{canceled} = 1; # Mark them as canceled
 
-              my $job = $es_self->jobman->add_job($evalobj);
-              my $future = $job->{future};
-              debug "Got job and future";
-
-              # Log the job for the session. Cancel any in progress with the same sequence.
-              if ($es_self->sessions->{$session_id}{jobs}{$sequence}) {
-                my $job = $self->sessions->{$session_id}{jobs}{$sequence};
-                
-                $job->{future}->fail("Session ended") unless $job->{future}->is_ready;
-                $job->{canceled} = 1; # Mark them as canceled
-
-                delete $es_self->sessions->{$session_id}{jobs}{$sequence};
-              }
-              $es_self->sessions->{$session_id}{jobs}{$sequence} = $job;
-              
-              $future->on_ready(fun ($future) {
-                my $output = eval {$future->get()};
-                if ($@) {
-                  my $response = encode_message(warning => {message => Encode::encode($encoding, "$@"), sequence => $sequence });
-                  $stream->write($response);
-                } else {
-                  my $response = encode_message(response => {sequence => $sequence, contents => Encode::encode($encoding, $output)});
-                  $stream->write($response);
+                  delete $es_self->sessions->{$session_id}{jobs}{$sequence};
                 }
+                $es_self->sessions->{$session_id}{jobs}{$sequence} = $job;
+                
+                $future->on_ready(fun ($future) {
+                  my $output = eval {$future->get()};
+                  if ($@) {
+                    my $response = encode_message(warning => {message => Encode::encode($out_encoding, "$@"), sequence => $sequence });
+                    $stream->write($response);
+                  } else {
+                    my $response = encode_message(response => {sequence => $sequence, contents => Encode::encode($out_encoding, $output)});
+                    $stream->write($response);
+                  }
 
-                delete $es_self->sessions->{$session_id}{jobs}{$sequence}; # get rid of the references, so we don't leak
-              });
-
+                  delete $es_self->sessions->{$session_id}{jobs}{$sequence}; # get rid of the references, so we don't leak
+                });
+              } catch {
+                my $response = encode_message(warning => {message => "Something went wrong during decoding: $@", sequence => $sequence});
+                $stream->write($response);
+              }
             } else {
               my $response = encode_message(warning => {message => "Got unhandled packet type, ". ref($message)});
               $stream->write($response);
@@ -148,7 +151,7 @@ method init() {
     on_listen_error => sub {die "Cannot listen - $_[1]\n"},
 
     on_listen => method() {
-        warn "listening on: " . $self->sockhost . ':' . $self->sockport . "\n";
+        print "listening on: " . $self->sockhost . ':' . $self->sockport . "\n";
     },
   );
 

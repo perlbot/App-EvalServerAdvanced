@@ -1,6 +1,6 @@
 package App::EvalServerAdvanced::JobManager;
 use v5.24.0;
-our $VERSION = '0.015';
+our $VERSION = '0.016';
 
 use strict;
 use warnings;
@@ -40,9 +40,9 @@ method run_job($eval_job) {
             close(STDERR);
             dup2(1,2) or _exit(212); # Setup the C side of things
             *STDERR = \*STDOUT; # Setup the perl side of things
-            binmode STDOUT, ":utf8";
-            binmode STDERR, ":utf8";
-            binmode STDIN, ":utf8";
+            binmode STDOUT, ":encoding(utf8)";
+            binmode STDERR, ":encoding(utf8)";
+            binmode STDIN, ":encoding(utf8)";
 
             $SIG{$_} = sub {_exit(1)} for (keys %SIG);
 
@@ -69,7 +69,7 @@ method run_job($eval_job) {
 
 method tick() {
     debug "Tick ", "".$self->workers->%*;
-    if (keys $self->workers->%* < config->jobmanager->max_workers) {
+    if (keys $self->workers->%* < config->jobmanager->max_workers) { ## no critic
         my $rtcount =()= $self->jobs->{realtime}->@*;
         # TODO implement deadline jobs properly
 

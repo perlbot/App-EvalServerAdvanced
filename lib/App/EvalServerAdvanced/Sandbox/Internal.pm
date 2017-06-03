@@ -1,5 +1,5 @@
 package App::EvalServerAdvanced::Sandbox::Internal;
-our $VERSION = '0.015';
+our $VERSION = '0.016';
 
 use strict;
 use warnings;
@@ -20,7 +20,7 @@ do {
     package 
     Zathras; 
     our $AUTOLOAD; 
-    use overload '""' => sub {
+    use overload '""' => sub { ## no critic
         my $data = @{$_[0]{args}}? qq{$_[0]{data}(}.join(', ', map {"".$_} @{$_[0]{args}}).qq{)} : qq{$_[0]{data}};
         my $old = $_[0]{old};
 
