@@ -12,6 +12,8 @@ use POSIX ();
 use Linux::Seccomp;
 use Carp qw/croak/;
 use Permute::Named::Iter qw/permute_named_iter/;
+use Module::Runtime qw/check_module_name require_module/;
+use App::EvalServerAdvanced::Config;
 
 use constant {
   CLONE_FILES => Linux::Clone::FILES,
@@ -86,6 +88,7 @@ our %rule_sets = (
               {syscall => 'set_robust_list'},
               {syscall => 'futex'},
               {syscall => 'getrlimit'},
+              {syscall => 'dup'},
       # TODO these should be defaults? locked down more?
       {syscall => 'prctl',},
       {syscall => 'poll',},
@@ -369,6 +372,38 @@ sub engage {
   my $self = shift;
   $self->build_seccomp();
   $self->apply_seccomp();
+}
+
+sub BUILD {
+  my ($self) = @_;
+
+  my $load_module = sub {
+    my ($name) = @_;
+    check_module_name($name);
+
+    if ($name !~ /^App::EvalServerAdvanced::Seccomp::Plugin::/) {
+      do {
+        local @INC = config->sandbox->plugin_base;
+        return $name if (eval {require_module($name)});
+      };
+      # we couldnt' load it from the plugin base, try from @INC with a fully qualified name
+      my $fullname = "App::EvalServerAdvanced::Seccomp::Plugin::$name";
+      return $fullname if (eval {require_module($fullname)});
+      
+      die "Failed to find plugin $name";
+    } else {
+      return $name if (eval {require_module($name)});
+      
+      die "Failed to find plugin $name";      
+    }
+  };
+
+  for my $plugin_name (config->sandbox->seccomp->plugins->@*) {
+    my $realname = $load_module->($plugin_name);
+    $realname->init($self);
+  }
+};
+
 }
 
 1;

@@ -3,19 +3,20 @@
 use strict;
 use warnings;
 our $VERSION = '0.018';
-
-use Getopt::Long;
-
-use App::EvalServerAdvanced;
-use App::EvalServerAdvanced::Config;
-
 my $debug;
 
-GetOptions(
-    "config-dir=s" => \$App::EvalServerAdvanced::Config::config_dir,
-    "debug" => \$debug,
-    "help", \&displayhelp,
-);
+BEGIN {
+    use App::EvalServerAdvanced::Config;
+    use Getopt::Long;
+    GetOptions(
+        "config-dir=s" => \$App::EvalServerAdvanced::Config::config_dir,
+        "debug" => \$debug,
+        "help", \&displayhelp,
+    );
+
+}
+
+use App::EvalServerAdvanced;
 
 sub displayhelp {
     print <<'EOH';
