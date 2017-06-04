@@ -145,11 +145,16 @@ sub run_eval {
 
     my %ENV = config->sandbox->environment->%*; # set the environment up
 
+    my $main_file;
     # Create the other files.
     for my $file (@$files) {
       my $filename = $file->filename;
       my $contents = $file->contents;
-      next if ($filename eq '__code'); # skip over main exec code.  TODO make this use a real filename, with a flag
+
+      if ($filename eq '__code') {
+        $main_file = $file;
+        next; # don't write it here
+      } 
       my $path = path($filename);
       $path->parent()->mkpath(); # try to create the directory needed.  If it fails, the eval fails
 
@@ -167,7 +172,6 @@ sub run_eval {
     $esc->engage(); # TODO Make this optional, somehow for testing
     
     # TODO make this accept a filename, that's already written instead of code
-    my $main_file = ''; #TODO, define when creating files
     run_code($language, $code, $main_file);
   });
   
@@ -211,7 +215,7 @@ sub set_resource_limits {
 }
 
 sub run_code {
-  my ($lang, $code) = @_;
+  my ($lang, $code, $code_file) = @_;
 
   my $lang_config = config->language->$lang;
 
@@ -227,7 +231,7 @@ sub run_code {
     my ($file) = Path::Tiny->tempfile;
 
     open(my $tfh, ">", "$file");
-    print $tfh $code;
+    print $tfh $code_file->contents;
     close($tfh);
 
     $arg_list = [map {
