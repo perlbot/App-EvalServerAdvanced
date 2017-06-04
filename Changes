@@ -1,3 +1,6 @@
+0.016 - June 3rd 2017
+  * Fix more utf8 related stuff
+
 0.015 - June 2nd 2017
   * Fix some UTF8 related stuff.
   * Prepare for a protocol change to allow other encodings than utf8
