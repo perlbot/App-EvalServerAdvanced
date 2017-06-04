@@ -34,20 +34,23 @@ method run_job($eval_job) {
     my $out = '';
     my $in = '';
 
+    my ($code_file) = grep {$_->filename eq '__code'} $eval_obj->{files}->@*;
+    my $code = $code_file->get_contents;
+
     my $proc_future;
     my $proc = IO::Async::Process->new(
         code => sub {
             close(STDERR);
             dup2(1,2) or _exit(212); # Setup the C side of things
             *STDERR = \*STDOUT; # Setup the perl side of things
-            binmode STDOUT, ":encoding(utf8)";
+            binmode STDOUT, ":encoding(utf8)"; # these really only affect perl subs, but they should also support other encodings
             binmode STDERR, ":encoding(utf8)";
             binmode STDIN, ":encoding(utf8)";
 
             $SIG{$_} = sub {_exit(1)} for (keys %SIG);
 
             eval {
-                App::EvalServerAdvanced::Sandbox::run_eval($eval_obj->{files}{__code}, $eval_obj->{language}, $eval_obj->{files});
+                App::EvalServerAdvanced::Sandbox::run_eval($code, $eval_obj->{language}, $eval_obj->{files});
             };
             if ($@) {
                 print "$@";
@@ -56,6 +59,7 @@ method run_job($eval_job) {
             _exit(0);
         },
         stdout => {into => \$out},
+        # TODO these two things need to be handled differently for encoding
         stdin => {from => Encode::encode("utf8", $in)},
         on_finish => sub { my $out_utf8 = Encode::decode("utf8", $out); $job_future->done($out_utf8) unless $job_future->is_ready; delete $self->workers->{$proc_future}; }
     );

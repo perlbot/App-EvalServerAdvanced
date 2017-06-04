@@ -12,7 +12,6 @@ use App::EvalServerAdvanced::JobManager;
 use Function::Parameters;
 use App::EvalServerAdvanced::Protocol;
 use App::EvalServerAdvanced::Log;
-use Encode;
 use Syntax::Keyword::Try;
 
 use Data::Dumper;
@@ -82,17 +81,13 @@ method init() {
 
             if ($message->isa("App::EvalServerAdvanced::Protocol::Eval")) {
               my $sequence = $message->sequence;
+              my $out_encoding = eval {$message->encoding} // "utf8";
               try {  
                 my $prio = ($message->prio->has_pr_deadline ? "deadline" :
                            ($message->prio->has_pr_batch    ? "batch" : "realtime"));
-                my $out_encoding = eval {$message->encoding} // "utf8";
 
                 my $evalobj = {
-                  files => {map {
-                        my $file_encoding = eval {$_->encoding};
-                        my $cont = $file_encoding? Encode::decode($file_encoding, $_->contents) : $_->contents;
-                        ($_->filename => $cont)
-                    } $message->{files}->@*},
+                  files => $message->{files},
                   priority => $prio,
                   language => $message->language,
                 };
@@ -121,21 +116,21 @@ method init() {
                 $future->on_ready(fun ($future) {
                   my $output = eval {$future->get()};
                   if ($@) {
-                    my $response = encode_message(warning => {message => Encode::encode($out_encoding, "$@"), sequence => $sequence });
+                    my $response = encode_message(warning => {message => "$@", sequence => $sequence, encoding => $out_encoding });
                     $stream->write($response);
                   } else {
-                    my $response = encode_message(response => {sequence => $sequence, contents => Encode::encode($out_encoding, $output)});
+                    my $response = encode_message(response => {sequence => $sequence, contents => $output, encoding => $out_encoding});
                     $stream->write($response);
                   }
 
                   delete $es_self->sessions->{$session_id}{jobs}{$sequence}; # get rid of the references, so we don't leak
                 });
               } catch {
-                my $response = encode_message(warning => {message => "Something went wrong during decoding: $@", sequence => $sequence});
+                my $response = encode_message(warning => {message => "Something went wrong during decoding: $@", encoding => $out_encoding, sequence => $sequence});
                 $stream->write($response);
               }
             } else {
-              my $response = encode_message(warning => {message => "Got unhandled packet type, ". ref($message)});
+              my $response = encode_message(warning => {message => "Got unhandled packet type, ". ref($message), encoding => "utf8"});
               $stream->write($response);
             }
           }

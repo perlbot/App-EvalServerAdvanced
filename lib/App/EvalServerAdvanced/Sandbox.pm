@@ -146,8 +146,9 @@ sub run_eval {
     my %ENV = config->sandbox->environment->%*; # set the environment up
 
     # Create the other files.
-    for my $filename (keys %$files) {
-      my $contents = $files->{$filename};
+    for my $file (@$files) {
+      my $filename = $file->filename;
+      my $contents = $file->contents;
       next if ($filename eq '__code'); # skip over main exec code.  TODO make this use a real filename, with a flag
       my $path = path($filename);
       $path->parent()->mkpath(); # try to create the directory needed.  If it fails, the eval fails
