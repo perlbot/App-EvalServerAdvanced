@@ -49,6 +49,13 @@ sub run_eval {
 
   my @binds = config->sandbox->bind_mounts->@*;
 
+  # Setup SECCOMP for us
+  my $lang_config = config->language->$language;
+  die "Language $language not configured." unless $lang_config;
+
+  my $profile = $lang_config->seccomp_profile // "default";
+  my $esc = App::EvalServerAdvanced::Seccomp->new(profiles => [$profile], exec_map => config->language);
+
 	# Get the nobody uid before we chroot, namespace and do other funky stuff.
 	my $nobody_uid = getpwnam("nobody");
 	die "Error, can't find a uid for 'nobody'. Replace with someone who exists" unless $nobody_uid;
@@ -163,12 +170,7 @@ sub run_eval {
       close($fh);
     }
 
-    # Setup SECCOMP for us
-    my $lang_config = config->language->$language;
-    die "Language $language not configured." unless $lang_config;
-
-    my $profile = $lang_config->seccomp_profile // "default";
-    my $esc = App::EvalServerAdvanced::Seccomp->new(profiles => [$profile], exec_map => config->language);
+    # Enable seccomp
     $esc->engage(); # TODO Make this optional, somehow for testing
     
     # TODO make this accept a filename, that's already written instead of code

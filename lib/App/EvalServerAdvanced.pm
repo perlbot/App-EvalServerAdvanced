@@ -172,10 +172,6 @@ __END__
 
 App::EvalServerAdvanced - A more featured update to App::EvalServer
 
-=head1 VERSION
-
-version 0.001
-
 =head1 DESCRIPTION
 
 This is a complete redesign and rewrite of the original code behind App::EvalServer.

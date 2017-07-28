@@ -88,7 +88,7 @@ sub run_perl {
 
     local $_;
 
-    my $ret;
+    my ($ret, $err);
     {
         no strict; no warnings; package main;
         do {
@@ -101,6 +101,7 @@ sub run_perl {
                 $code = "use $]; use feature qw/postderef refaliasing lexical_subs postderef_qq signatures/;\n#line 1 \"(IRC)\"\n$code";
             }
             $ret = eval $code;
+            $err = $@;
         }
     }
     select STDOUT;
@@ -117,7 +118,7 @@ sub run_perl {
     print $out unless $outbuffer;
     print $outbuffer;
 
-    if( $@ ) { print "ERROR: $@" }
+    if( $err ) { print "ERROR: $err" }
 }
 
 sub perl_wrap {

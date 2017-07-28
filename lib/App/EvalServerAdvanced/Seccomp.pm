@@ -400,10 +400,8 @@ sub BUILD {
 
   for my $plugin_name (config->sandbox->seccomp->plugins->@*) {
     my $realname = $load_module->($plugin_name);
-    $realname->init($self);
+    $realname->init_plugin($self);
   }
-};
-
 }
 
 1;
@@ -439,33 +437,6 @@ kernel exploit.  C<madvise> and C<mmap>, with these two you can actually trigger
 exploit.  But because the default rules restrict you from creating threads, you can't create the race
 condition needed to actually accomplish it.  So you should still take some 
 other measures to protect yourself.
-
-=head1 USE
-
-You'll want to take a look at the 'etc' directory in the dist for an example config.  
-Future versions will include a script for generating a configuration and environment for running
-the server.
-
-Right now you probably don't actually want to actually install this, but instead just download the dist and run from it locally.
-It's a bit difficult to use and requires root.
-
-=head1 TODO
-
-=over 1
-
-=item Make a script to create a usable environment
-
-=item Create some kind of pluggable system for specifiying additional Seccomp rules
-
-=item Create another pluggable system for extending App::EvalServer::Sandbox::Internal with additional subs
-
-=item Finish enabling full configuration of the sandbox without having to edit any code
-
-=back
-
-=head1 SEE ALSO
-
-L<App::EvalServerAdvanced::REPL>, L<App::EvalServerAdvanced::Protocol>
 
 =head1 AUTHOR
 
