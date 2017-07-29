@@ -1,11 +1,12 @@
 package App::EvalServerAdvanced::JobManager;
+
 use v5.20;
-use feature qw(postderef);
 use strict;
 use warnings;
+use feature qw(postderef);
 no warnings qw(experimental::postderef);
 
-our $VERSION = '0.018';
+our $VERSION = '0.019';
 
 use Data::Dumper;
 use Moo;
