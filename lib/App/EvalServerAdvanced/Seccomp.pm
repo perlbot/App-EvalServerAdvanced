@@ -90,6 +90,8 @@ our %rule_sets = (
       {syscall => 'prctl',},
       {syscall => 'poll',},
       {syscall => 'uname',},
+
+      {syscall => 'getrandom'},
     ],
   },
 
@@ -140,6 +142,7 @@ our %rule_sets = (
     permute => {open_modes => [POSIX::O_CREAT,POSIX::O_WRONLY, POSIX::O_TRUNC, POSIX::O_RDWR]},
     rules => [{syscall => 'write'},
               {syscall => 'pwrite64'},
+              {syscall => 'mkdir'},
     ],
     include => ['file_open', 'file_readonly'],
   },
