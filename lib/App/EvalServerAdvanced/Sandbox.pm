@@ -1,5 +1,5 @@
 package App::EvalServerAdvanced::Sandbox;
-our $VERSION = '0.019';
+our $VERSION = '0.020';
 
 use strict;
 use warnings;

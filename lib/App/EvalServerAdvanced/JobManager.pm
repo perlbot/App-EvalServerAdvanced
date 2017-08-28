@@ -6,7 +6,7 @@ use warnings;
 use feature qw(postderef);
 no warnings qw(experimental::postderef);
 
-our $VERSION = '0.019';
+our $VERSION = '0.020';
 
 use Data::Dumper;
 use Moo;
