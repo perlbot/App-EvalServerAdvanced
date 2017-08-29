@@ -1,3 +1,6 @@
+0.020 - Aug 28th 2017
+  * Add chmod to seccomp rules for temp files
+
 0.019 - Aug 28th 2017
   * Add getrandom and mkdir to seccomp rules
 
