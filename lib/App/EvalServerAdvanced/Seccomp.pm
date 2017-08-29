@@ -143,6 +143,7 @@ our %rule_sets = (
     rules => [{syscall => 'write'},
               {syscall => 'pwrite64'},
               {syscall => 'mkdir'},
+              {syscall => 'chmod'}, # TODO file_meta profile?
     ],
     include => ['file_open', 'file_readonly'],
   },
