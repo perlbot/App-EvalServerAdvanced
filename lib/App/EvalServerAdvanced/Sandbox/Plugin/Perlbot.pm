@@ -106,17 +106,22 @@ sub run_perl {
     }
     select STDOUT;
 
-    local $Data::Dumper::Terse = 1;
-    local $Data::Dumper::Quotekeys = 0;
-    local $Data::Dumper::Indent = 0;
-    local $Data::Dumper::Useqq = 1;
-    local $Data::Dumper::Freezer = "dd_freeze";
 
-    no warnings;
-    my $out = ref($ret) ? Dumper( $ret ) : "" . $ret;
 
-    print $out unless $outbuffer;
-    print $outbuffer;
+    if (length($outbuffer) > 0) {
+        print $outbuffer;
+    } else {
+        local $Data::Dumper::Terse = 1;
+        local $Data::Dumper::Quotekeys = 0;
+        local $Data::Dumper::Indent = 0;
+        local $Data::Dumper::Useqq = 1;
+        local $Data::Dumper::Freezer = "dd_freeze";
+
+        no warnings;
+        my $out = ref($ret) ? Dumper( $ret ) : "" . $ret;
+    
+      print $out;
+    }
 
     if( $err ) { print "ERROR: $err" }
 }
