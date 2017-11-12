@@ -1,0 +1,254 @@
+# use Linux::Clone;
+#
+# use constant {
+#  CLONE_FILES => Linux::Clone::FILES,
+#  CLONE_FS => Linux::Clone::FS,
+#  CLONE_NEWNS => Linux::Clone::NEWNS,
+#  CLONE_VM => Linux::Clone::VM,
+#  CLONE_THREAD => Linux::Clone::THREAD,
+#  CLONE_SIGHAND => Linux::Clone::SIGHAND,
+#  CLONE_SYSVSEM => Linux::Clone::SYSVSEM,
+#  CLONE_NEWUSER => Linux::Clone::NEWUSER,
+#  CLONE_NEWPID => Linux::Clone::NEWPID,
+#  CLONE_NEWUTS => Linux::Clone::NEWUTS,
+#  CLONE_NEWIPC => Linux::Clone::NEWIPC,
+#  CLONE_NEWNET => Linux::Clone::NEWNET,
+#  CLONE_NEWCGROUP => Linux::Clone::NEWCGROUP,
+#  CLONE_PTRACE => Linux::Clone::PTRACE,
+#  CLONE_VFORK => Linux::Clone::VFORK,
+#  CLONE_SETTLS => Linux::Clone::SETTLS,
+#  CLONE_PARENT_SETTID => Linux::Clone::PARENT_SETTID,
+#  CLONE_CHILD_SETTID => Linux::Clone::CHILD_SETTID,
+#  CLONE_CHILD_CLEARTID => Linux::Clone::CHILD_CLEARTID,
+#  CLONE_DETACHED => Linux::Clone::DETACHED,
+#  CLONE_UNTRACED => Linux::Clone::UNTRACED,
+#  CLONE_IO => Linux::Clone::IO,
+#};
+
+# Define some more open modes that POSIX doesn't have for us.
+# my ($O_DIRECTORY, $O_CLOEXEC, $O_NOCTTY, $O_NOFOLLOW) = (00200000, 02000000, 00000400, 00400000);
+
+# Not sure how this should work yet
+constants:
+  plugins:
+    - 'POSIX'
+    - 'Clone'
+  values:
+    TCGETS: 0x5401
+    FIOCLEX: 0x5451
+    FIONBIO: 0x5421
+    TIOCGPTN: 0x80045430
+
+
+profiles:
+  default:
+    include:
+      - time_calls
+      - file_readonly
+      - stdio
+      - exec_wrapper
+      - file_write
+      - file_tty
+      - file_opendir
+      - perlmod_file_temp
+    rules:
+# Memory related calls
+      - syscall: mmap
+      - syscall: munmap
+      - syscall: mremap
+      - syscall: mprotect
+      - syscall: madvise
+      - syscall: brk
+# Exit and signal related
+      - syscall: exit
+      - syscall: exit_group
+      - syscall: rt_sigaction
+      - syscall: rt_sigprocmask
+      - syscall: rt_sigreturn
+# User related calls
+      - syscall: getuid
+      - syscall: geteuid
+      - syscall: getcwd
+      - syscall: getpid
+      - syscall: gettid
+      - syscall: getgid
+      - syscall: getegid
+      - syscall: getgroups
+# System related
+      - syscall: uname
+# Non-opening file related calls
+      - syscall: access
+      - syscall: poll
+      - syscall: readlink
+# Safe threading related calls
+      - syscall: arch_prctl
+      - syscall: set_tid_address
+      - syscall: set_robust_list
+      - syscall: futex
+# Limit/Capabilities related
+      - syscall: getrlimit
+      - syscall: prctl
+
+  exec_wrapper:
+    rules_generator: "SeccompExec::exec_wrapper"
+
+  file_open:
+    rules:
+      - syscall: open
+        tests:
+          - [1, '==', '{{open_modes}}']
+      - syscall: openat
+        tests:
+          - [2, '==', '{{open_modes}}']
+      - syscall: close
+      - syscall: select
+      - syscall: read
+      - syscall: pread64
+      - syscall: lseek
+      - syscall: fstat
+      - syscall: stat
+      - syscall: lstat
+      - syscall: fcntl
+# ioctl(4, TCGETS, 0xDEADCAFEBABE) = -1 ENOTTY (Inappropriate ioctl for device)
+# Check if the opened file is a TTY
+      - syscall: ioctl
+        tests:
+          - [1, '==', 'TCGETS']
+
+  file_opendir:
+    include:
+      - file_open
+    rules:
+      - syscall: getdents
+      - syscall: open
+        tests:
+          - [1, '==', 'O_DIRECTORY|O_RDONLY|O_NONBLOCK|O_CLOEXEC']
+
+  file_readonly:
+    include:
+      - file_open
+    permute:
+      open_modes:
+        - 'O_NONBLOCK'
+        - 'O_EXCL'
+        - 'O_RDONLY'
+        - 'O_NOFOLLOW'
+        - 'O_CLOEXEC'
+
+  file_tty:
+    include:
+      - file_open
+    permute:
+      open_modes:
+        - 'O_NOCTTY'
+
+  file_write:
+    include:
+      - file_open
+      - file_readonly
+    permute:
+      open_modes:
+        - 'O_CREAT'
+        - 'O_WRONLY'
+        - 'O_TRUNC'
+        - 'O_RDWR'
+    rules:
+      - syscall: write
+      - syscall: pwrite64
+
+  file_temp:
+    rules:
+      - syscall: chmod
+        tests:
+          - [1, '==', 0o600]
+      - syscall: unlink
+
+  lang_javascript:
+    include:
+      - default
+      - file_temp
+    rules:
+      - syscall: pipe2
+      - syscall: epoll_create1
+      - syscall: eventfd2
+      - syscall: epoll_ctl
+      - syscall: epoll_wait
+      - syscall: ioctl
+        tests:
+          - [1, '==', 'FIOCLEX']
+      - syscall: clone
+        tests:
+          - [0, '==', 'CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVMEM|CLONE_SETTLS|CLONE_PARENT_SETTID|CLONE_CHILD|CLONE_CHILD_CLEARTID']
+      - syscall: ioctl
+        tests:
+          - [1, '==', 'TIOCGPTN']
+      - syscall: ioctl
+        tests:
+          - [1, '==', 'FIONBIO']
+      - syscall: ioctl
+        tests: # Let node do any ioctl to stdout
+          - [0, '==', 1]
+      - syscall: ioctl
+        tests: # let node do any ioctl to stderr
+          - [0, '==', 2]
+
+  lang_perl:
+    include:
+      - default
+    rules: []
+
+  lang_ruby:
+    include:
+      - default
+      - ruby_timer_thread
+    rules:
+      - rules:
+          -
+            - 0
+            - ==
+            - 5
+        syscall: write
+      - rules:
+          -
+            - 0
+            - ==
+            - 7
+        syscall: write
+
+  ruby_timer_thread:
+    rules:
+      - rules:
+          -
+            - 0
+            - ==
+            - 4001536
+        syscall: clone
+      - syscall: sigaltstack
+      - syscall: pipe2
+
+  stdio:
+    rules:
+      - rules:
+          -
+            - 0
+            - ==
+            - 0
+        syscall: read
+      - rules:
+          -
+            - 0
+            - ==
+            - 1
+        syscall: write
+      - rules:
+          -
+            - 0
+            - ==
+            - 2
+        syscall: write
+
+  time_calls:
+    rules:
+      - syscall: nanosleep
+      - syscall: clock_gettime
+      - syscall: clock_getres
