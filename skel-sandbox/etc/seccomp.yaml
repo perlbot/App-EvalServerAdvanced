@@ -39,7 +39,6 @@ constants:
     FIONBIO: 0x5421
     TIOCGPTN: 0x80045430
 
-
 profiles:
   default:
     include:
@@ -88,6 +87,12 @@ profiles:
 # Limit/Capabilities related
       - syscall: getrlimit
       - syscall: prctl
+
+  time_calls:
+    rules:
+      - syscall: nanosleep
+      - syscall: clock_gettime
+      - syscall: clock_getres
 
   exec_wrapper:
     rules_generator: "SeccompExec::exec_wrapper"
@@ -200,55 +205,27 @@ profiles:
   lang_ruby:
     include:
       - default
-      - ruby_timer_thread
     rules:
-      - rules:
-          -
-            - 0
-            - ==
-            - 5
-        syscall: write
-      - rules:
-          -
-            - 0
-            - ==
-            - 7
-        syscall: write
-
-  ruby_timer_thread:
-    rules:
-      - rules:
-          -
-            - 0
-            - ==
-            - 4001536
-        syscall: clone
+      - syscall: clone
+        tests:
+          - [0, '==', 'CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVSEM|CLONE_SETTLS|CLONE_PARENT_SETTID|CLONE_CHILD_CLEARTID']
       - syscall: sigaltstack
       - syscall: pipe2
+      - syscall: write
+        tests: # Used for inter thread communication.  FDs might change number depending on release
+          - [0, '==', 5]
+      - syscall: write
+        tests: # Used for inter thread communication.  FDs might change number depending on release
+          - [0, '==', 7]
 
   stdio:
     rules:
-      - rules:
-          -
-            - 0
-            - ==
-            - 0
-        syscall: read
-      - rules:
-          -
-            - 0
-            - ==
-            - 1
-        syscall: write
-      - rules:
-          -
-            - 0
-            - ==
-            - 2
-        syscall: write
-
-  time_calls:
-    rules:
-      - syscall: nanosleep
-      - syscall: clock_gettime
-      - syscall: clock_getres
+      - syscall: read # Read from STDIN
+        tests:
+          - [0, '==', 0]
+      - syscall: write # Write to STDOUT
+        tests:
+          - [0, '==', 1]
+      - syscall: write # Write to STDERR
+        tests:
+          - [0, '==', 2]
