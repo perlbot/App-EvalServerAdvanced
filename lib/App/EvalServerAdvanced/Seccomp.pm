@@ -4,49 +4,59 @@ our $VERSION = '0.021';
 use strict;
 use warnings;
 
+use v5.20;
+
 use Data::Dumper;
 use List::Util qw/reduce uniq/;
 use Moo;
-use Linux::Clone;
-use POSIX ();
+#use Linux::Clone;
+#use POSIX ();
 use Linux::Seccomp;
 use Carp qw/croak/;
 use Permute::Named::Iter qw/permute_named_iter/;
 use Module::Runtime qw/check_module_name require_module/;
 use App::EvalServerAdvanced::Config;
+use App::EvalServerAdvanced::ConstantCalc;
+use App::EvalServerAdvanced::Seccomp::Profile;
+use App::EvalServerAdvanced::Seccomp::Syscall;
+use Function::Parameters;
+use YAML::XS (); # no imports
 
-use constant {
-  CLONE_FILES => Linux::Clone::FILES,
-  CLONE_FS => Linux::Clone::FS,
-  CLONE_NEWNS => Linux::Clone::NEWNS,
-  CLONE_VM => Linux::Clone::VM,
-  CLONE_THREAD => Linux::Clone::THREAD,
-  CLONE_SIGHAND => Linux::Clone::SIGHAND,
-  CLONE_SYSVSEM => Linux::Clone::SYSVSEM,
-  CLONE_NEWUSER => Linux::Clone::NEWUSER,
-  CLONE_NEWPID => Linux::Clone::NEWPID,
-  CLONE_NEWUTS => Linux::Clone::NEWUTS,
-  CLONE_NEWIPC => Linux::Clone::NEWIPC,
-  CLONE_NEWNET => Linux::Clone::NEWNET,
-  CLONE_NEWCGROUP => Linux::Clone::NEWCGROUP,
-  CLONE_PTRACE => Linux::Clone::PTRACE,
-  CLONE_VFORK => Linux::Clone::VFORK,
-  CLONE_SETTLS => Linux::Clone::SETTLS,
-  CLONE_PARENT_SETTID => Linux::Clone::PARENT_SETTID,
-  CLONE_CHILD_SETTID => Linux::Clone::CHILD_SETTID,
-  CLONE_CHILD_CLEARTID => Linux::Clone::CHILD_CLEARTID,
-  CLONE_DETACHED => Linux::Clone::DETACHED,
-  CLONE_UNTRACED => Linux::Clone::UNTRACED,
-  CLONE_IO => Linux::Clone::IO,
-};
+# use constant {
+#   CLONE_FILES => Linux::Clone::FILES,
+#   CLONE_FS => Linux::Clone::FS,
+#   CLONE_NEWNS => Linux::Clone::NEWNS,
+#   CLONE_VM => Linux::Clone::VM,
+#   CLONE_THREAD => Linux::Clone::THREAD,
+#   CLONE_SIGHAND => Linux::Clone::SIGHAND,
+#   CLONE_SYSVSEM => Linux::Clone::SYSVSEM,
+#   CLONE_NEWUSER => Linux::Clone::NEWUSER,
+#   CLONE_NEWPID => Linux::Clone::NEWPID,
+#   CLONE_NEWUTS => Linux::Clone::NEWUTS,
+#   CLONE_NEWIPC => Linux::Clone::NEWIPC,
+#   CLONE_NEWNET => Linux::Clone::NEWNET,
+#   CLONE_NEWCGROUP => Linux::Clone::NEWCGROUP,
+#   CLONE_PTRACE => Linux::Clone::PTRACE,
+#   CLONE_VFORK => Linux::Clone::VFORK,
+#   CLONE_SETTLS => Linux::Clone::SETTLS,
+#   CLONE_PARENT_SETTID => Linux::Clone::PARENT_SETTID,
+#   CLONE_CHILD_SETTID => Linux::Clone::CHILD_SETTID,
+#   CLONE_CHILD_CLEARTID => Linux::Clone::CHILD_CLEARTID,
+#   CLONE_DETACHED => Linux::Clone::DETACHED,
+#   CLONE_UNTRACED => Linux::Clone::UNTRACED,
+#   CLONE_IO => Linux::Clone::IO,
+# };
 
 has exec_map => (is => 'ro', default => sub {+{}});
-has profiles => (is => 'ro'); # aref
+has profiles => (is => 'ro', default => sub {+{}});
+has constants => (is => 'ro', default => sub {App::EvalServerAdvanced::ConstantCalc->new()});
 
 has _rules => (is => 'rw');
 
 has seccomp => (is => 'ro', default => sub {Linux::Seccomp->new(SCMP_ACT_KILL)});
 has _permutes => (is => 'ro', default => sub {+{}});
+has _plugins => (is => 'ro', default => sub {+{}});
+has _fullpermutes => (is => 'ro', lazy => 1, builder => 'calculate_permutations');
 has _used_sets => (is => 'ro', default => sub {+{}});
 
 has _finalized => (is => 'rw', default => 0); # TODO make this set once
@@ -54,226 +64,99 @@ has _finalized => (is => 'rw', default => 0); # TODO make this set once
 # Define some more open modes that POSIX doesn't have for us.
 my ($O_DIRECTORY, $O_CLOEXEC, $O_NOCTTY, $O_NOFOLLOW) = (00200000, 02000000, 00000400, 00400000);
 
-# TODO this needs some accessors to make it easier to define rulesets
-our %rule_sets = (
-  default => {
-    include => ['time_calls', 'file_readonly', 'stdio', 'exec_wrapper', 'file_write', 'file_tty', 'file_opendir', 'perlmod_file_temp'],
-    rules => [{syscall => 'mmap'},
-              {syscall => 'munmap'},
-              {syscall => 'mremap'},
-              {syscall => 'mprotect'},
-              {syscall => 'madvise'},
-              {syscall => 'brk'},
 
-              {syscall => 'exit'},
-              {syscall => 'exit_group'},
-              {syscall => 'rt_sigaction'},
-              {syscall => 'rt_sigprocmask'},
-              {syscall => 'rt_sigreturn'},
+#   # exec wrapper
+#   exec_wrapper => {
+#     # we have to generate these at runtime, we can't know ahead of time what they will be
+#     rules => sub {
+#         my $seccomp = shift;
+#         my $strptr = sub {unpack "Q", pack("p", $_[0])};
+#         my @rules;
+#
+#         my $exec_map = $seccomp->exec_map;
+#
+#         for my $version (keys %$exec_map) {
+#           push @rules, {syscall => 'execve', rules => [[0, '==', $strptr->($exec_map->{$version}{bin})]]};
+#         }
+#
+#         return @rules;
+#       }, # sub returns a valid arrayref.  given our $self as first arg.
+#   },
 
-              {syscall => 'getuid'},
-              {syscall => 'geteuid'},
-              {syscall => 'getcwd'},
-              {syscall => 'getpid'},
-              {syscall => 'gettid'},
-              {syscall => 'getgid'},
-              {syscall => 'getegid'},
-              {syscall => 'getgroups'},
-    
-              {syscall => 'access'}, # file_* instead?
-              {syscall => 'readlink'},
-              
-              {syscall => 'arch_prctl'},
-              {syscall => 'set_tid_address'},
-              {syscall => 'set_robust_list'},
-              {syscall => 'futex'},
-              {syscall => 'getrlimit'},
-              {syscall => 'dup'},
-      # TODO these should be defaults? locked down more?
-      {syscall => 'prctl',},
-      {syscall => 'poll',},
-      {syscall => 'uname',},
+method load_yaml($yaml_file) {
 
-      {syscall => 'getrandom'},
-    ],
-  },
+  # TODO sanitize file name via Path::Tiny, ensure it's either in the module location, or next to the sandbox config
 
-  perm_test => {
-    permute => {foo => [1, 2, 3], bar => [4, 5, 6]},
-    rules => [{syscall => 'permme', permute_rules => [[0, '==', \'foo'], [1, '==', \'bar']]}]
-  },
+  my $data = YAML::XS::LoadFile($yaml_file);
 
-  # File related stuff
-  stdio => {
-    rules => [{syscall => 'read', rules => [[qw|0 == 0|]]},  # STDIN
-              {syscall => 'write', rules => [[qw|0 == 1|]]}, # STDOUT
-              {syscall => 'write', rules => [[qw|0 == 2|]]},
-              ],
-  },
-  file_open => {
-    rules => [{syscall => 'open',   permute_rules => [['1', '==', \'open_modes']]}, 
-              {syscall => 'openat', permute_rules => [['2', '==', \'open_modes']]},
-              {syscall => 'close'},
-              {syscall => 'select'},
-              {syscall => 'read'},
-              {syscall => 'pread64'},
-              {syscall => 'lseek'},
-              {syscall => 'fstat'}, # default? not file_open?
-              {syscall => 'stat'},
-              {syscall => 'lstat'},
-              {syscall => 'fcntl'},
-              # 4352  ioctl(4, TCGETS, 0x7ffd10963820)  = -1 ENOTTY (Inappropriate ioctl for device)
-              # This happens on opened files for some reason? wtf
-              {syscall => 'ioctl', rules =>[[1, '==', 0x5401]]},
-              ],
-  },
-  file_opendir => {
-    rules => [{syscall => 'getdents'},
-              {syscall => 'open', rules => [['1', '==', $O_DIRECTORY|POSIX::O_RDONLY|POSIX::O_NONBLOCK|$O_CLOEXEC]]}, 
-             ],
-    include => ['file_open'],
-  },
-  file_tty => {
-    permute => {open_modes => [$O_NOCTTY]},
-    include => ['file_open'],
-  },
-  file_readonly => { 
-    permute => {open_modes => [POSIX::O_NONBLOCK, POSIX::O_EXCL, POSIX::O_RDONLY, $O_NOFOLLOW, $O_CLOEXEC]},
-    include => ['file_open'],
-  },
-  file_write => {
-    permute => {open_modes => [POSIX::O_CREAT,POSIX::O_WRONLY, POSIX::O_TRUNC, POSIX::O_RDWR]},
-    rules => [{syscall => 'write'},
-              {syscall => 'pwrite64'},
-              {syscall => 'mkdir'},
-              {syscall => 'chmod'}, # TODO file_meta profile?
-    ],
-    include => ['file_open', 'file_readonly'],
-  },
+  if (my $consts = $data->{constants}) {
+    for my $const_plugin (($consts->{plugins}//[])->@*) {
+      print "TODO load $const_plugin\n";
+    }
 
-  # time related stuff
-  time_calls => {
-    rules => [
-      {syscall => 'nanosleep'},
-      {syscall => 'clock_gettime'},
-      {syscall => 'clock_getres'},
-    ],
-  },
+    for my $const_key (keys (($consts->{values}//{})->%*)) {
+      $self->constants->add_constant($const_key, $consts->{values}{$const_key})
+    }
+  }
 
-  # ruby timer threads
-  ruby_timer_thread => {
-#    permute => {clone_flags => []},
-    rules => [
-      {syscall => 'clone', rules => [[0, '==', CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVSEM|CLONE_SETTLS|CLONE_PARENT_SETTID|CLONE_CHILD_CLEARTID]]},
+  print Dumper($data);
+}
 
-      # Only allow a new signal stack context to be created, and only with a size of 8192 bytes.  exactly what ruby does
-      # Have to allow it to be blind since i can't inspect inside the struct passed to it :(  I'm not sure how i feel about this one
-      {syscall => 'sigaltstack', }, #=> rules [[1, '==', 0], [2, '==', 8192]]},
-      {syscall => 'pipe2', },
-    ],
-  },
+sub get_profile_rules {
+  my ($self, $next_profile, $current_profile) = @_;
 
-  # perl module specific
-  perlmod_file_temp => {
-    rules => [
-      {syscall => 'chmod', rules => [[1, '==', 0600]]},
-      {syscall => 'unlink', },
-      ],
-  },
+  if ($self->_used_sets->{$next_profile}) {
+    #warn "Circular reference between $current_profile => $next_profile";
+    return (); # short circuit the loop
+  }
 
-  # exec wrapper
-  exec_wrapper => {
-    # we have to generate these at runtime, we can't know ahead of time what they will be
-    rules => sub {
-        my $seccomp = shift;
-        my $strptr = sub {unpack "Q", pack("p", $_[0])};
-        my @rules;
-
-        my $exec_map = $seccomp->exec_map;
-
-        for my $version (keys %$exec_map) {
-          push @rules, {syscall => 'execve', rules => [[0, '==', $strptr->($exec_map->{$version}{bin})]]};
-        }
-
-        return @rules;
-      }, # sub returns a valid arrayref.  given our $self as first arg.
-  },
-
-  # language master rules
-  lang_perl => {
-    rules => [],
-    include => ['default'],
-  },
-
-  lang_javascript => {
-    rules => [{syscall => 'pipe2'},
-              {syscall => 'epoll_create1'},
-              {syscall => 'eventfd2'},
-              {syscall => 'epoll_ctl'},
-              {syscall => 'epoll_wait'},
-              {syscall => 'ioctl', rules => [[1, '==', 0x5451]]}, # ioctl(0, FIOCLEX)
-              {syscall => 'clone', rules => [[0, '==', CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVSEM|CLONE_SETTLS|CLONE_PARENT_SETTID|CLONE_CHILD_CLEARTID]]},
-              {syscall => 'ioctl', rules => [[1, '==', 0x80045430]]},  #19348 ioctl(1, TIOCGPTN <unfinished ...>) = ?
-              {syscall => 'ioctl', rules => [[1, '==', 0x5421]]},  #ioctl(0, FIONBIO)
-              {syscall => 'ioctl', rules => [[0, '==', 1]]}, # just fucking let node do any ioctl to STDOUT
-              {syscall => 'ioctl', rules => [[0, '==', 2]]}, # just fucking let node do any ioctl to STDERR
-
-    ],
-    include => ['default'],
-  },
-
-  lang_ruby => {
-    rules => [
-      # Thread IPC writes, these might not be fixed but I don't know how to detect them otherwise 
-      {syscall => 'write', rules => [[0, '==', 5]]},
-      {syscall => 'write', rules => [[0, '==', 7]]},
-    ],
-    include => ['default', 'ruby_timer_thread'],
-  },
-);
+  $self->_used_sets->{$next_profile} = 1;
+  return $self->profiles->{$next_profile}->get_rules;
+}
 
 sub rule_add {
   my ($self, $name, @rules) = @_;
-
+  # TODO make this support raw syscall numbers?
   $self->seccomp->rule_add(SCMP_ACT_ALLOW, Linux::Seccomp::syscall_resolve_name($name), @rules);
 }
 
-sub _rec_get_rules {
-  my ($self, $profile) = @_;
-
-  return () if ($self->_used_sets->{$profile});
-  $self->_used_sets->{$profile} = 1;
-
-  croak "Rule set $profile not found" unless exists $rule_sets{$profile};
-
-  my @rules;
-  #print "getting profile $profile\n";
-
-  if (ref $rule_sets{$profile}{rules} eq 'ARRAY') {
-    push @rules, @{$rule_sets{$profile}{rules}};
-  } elsif (ref $rule_sets{$profile}{rules} eq 'CODE') {
-    my @sub_rules = $rule_sets{$profile}{rules}->($self);
-    push @rules, @sub_rules;
-  } elsif (!exists $rule_sets{$profile}{rules}) { # ignore it if missing
-  } else {
-    croak "Rule set $profile defines an invalid set of rules";
-  }
-  
-  for my $perm (keys %{$rule_sets{$profile}{permute} // +{}}) {
-    push @{$self->_permutes->{$perm}}, @{$rule_sets{$profile}{permute}{$perm}};
-  }
-
-  for my $include (@{$rule_sets{$profile}{include}//[]}) {
-    push @rules, $self->_rec_get_rules($include);
-  }
-
-  return @rules;
-}
+# sub _rec_get_rules {
+#   my ($self, $profile) = @_;
+# 
+#   return () if ($self->_used_sets->{$profile});
+#   $self->_used_sets->{$profile} = 1;
+# 
+#   croak "Rule set $profile not found" unless exists $rule_sets{$profile};
+# 
+#   my @rules;
+#   #print "getting profile $profile\n";
+# 
+#   if (ref $rule_sets{$profile}{rules} eq 'ARRAY') {
+#     push @rules, @{$rule_sets{$profile}{rules}};
+#   } elsif (ref $rule_sets{$profile}{rules} eq 'CODE') {
+#     my @sub_rules = $rule_sets{$profile}{rules}->($self);
+#     push @rules, @sub_rules;
+#   } elsif (!exists $rule_sets{$profile}{rules}) { # ignore it if missing
+#   } else {
+#     croak "Rule set $profile defines an invalid set of rules";
+#   }
+# 
+#   for my $perm (keys %{$rule_sets{$profile}{permute} // +{}}) {
+#     push @{$self->_permutes->{$perm}}, @{$rule_sets{$profile}{permute}{$perm}};
+#   }
+# 
+#   for my $include (@{$rule_sets{$profile}{include}//[]}) {
+#     push @rules, $self->_rec_get_rules($include);
+#   }
+# 
+#   return @rules;
+# }
 
 sub build_seccomp {
   my ($self) = @_;
 
   croak "build_seccomp called more than once" if ($self->_finalized);
+  $self->_finalized(1);
 
   my %gathered_rules; # computed rules
 
@@ -285,36 +168,6 @@ sub build_seccomp {
       push @{$gathered_rules{$syscall}}, $rule;
     }
   }
-
-  # optimize phase
-  my %full_permute;
-  for my $permute (keys %{$self->_permutes}) {
-    my @modes = @{$self->_permutes->{$permute}} = sort {$a <=> $b} uniq @{$self->_permutes->{$permute}};
-
-    # Produce every bitpattern for this permutation
-    for my $bit (1..(2**@modes) - 1) {
-      my $q = 1;
-      my $mode = 0;
-      #printf "%04b: ", $b;
-      do {
-        if ($q & $bit) {
-          my $r = int(log($q)/log(2)+0.5); # get the thing
-
-          $mode |= $modes[$r];
-
-          #print "$r";
-        }
-        $q <<= 1;
-      } while ($q <= $bit);
-
-      push @{$full_permute{$permute}}, $mode;
-    }
-  }
-
-  for my $k (keys %full_permute) {
-  @{$full_permute{$k}} = sort {$a <=> $b} uniq @{$full_permute{$k}} 
-  }
-
 
   my %comp_rules;
 
@@ -336,12 +189,12 @@ sub build_seccomp {
 
         croak "Permutation on syscall rule without actual permutation specified" if (!@perm_on);
 
-        my %perm_hash = map {$_ => $full_permute{$_}} @perm_on;
+        my %perm_hash = map {$_ => $self->_fullpermutes->{$_}} @perm_on;
         my $iter = permute_named_iter(%perm_hash);
 
         while (my $pvals = $iter->()) {
 
-          push @{$comp_rules{$syscall}}, 
+          push @{$comp_rules{$syscall}},
             [map {
               my @r = @$_;
               $r[2] = $pvals->{${$r[2]}};
@@ -363,8 +216,43 @@ sub build_seccomp {
       $self->rule_add($syscall, @$rule);
     }
   }
+}
 
-  $self->_finalized(1);
+sub calculate_permutations {
+  my ($self) = @_;
+  # TODO this is possible to implement with bitwise checks in seccomp, producing fewer rules.  it should be faster, but is more annoying to implement currently
+
+  my %full_permute;
+
+  for my $permute (keys %{$self->_permutes}) {
+    my @modes = @{$self->_permutes->{$permute}} = sort {$a <=> $b} uniq @{$self->_permutes->{$permute}};
+
+    # Produce every bitpattern for this permutation
+    for my $bit (1..(2**@modes) - 1) {
+      my $q = 1;
+      my $mode = 0;
+      #printf "%04b: ", $b;
+      do {
+        if ($q & $bit) {
+          my $r = int(log($q)/log(2)+0.5); # get the position
+
+          $mode |= $modes[$r];
+
+          #print "$r";
+        }
+        $q <<= 1;
+      } while ($q <= $bit);
+
+      push $full_permute{$permute}->@*, $mode;
+    }
+  }
+
+  # This originally sorted the values, why? it shouldn't matter.  must have been for easier sanity checking?
+  for my $k (keys %full_permute) {
+    $full_permute{$k}->@* = uniq $full_permute{$k}->@*
+  }
+
+  return \%full_permute;
 }
 
 sub apply_seccomp {
@@ -378,33 +266,51 @@ sub engage {
   $self->apply_seccomp();
 }
 
+sub load_plugin {
+  my ($self, $plugin_name) = @_;
+
+  return $self->_plugins->{$plugin_name} if (exists $self->_plugins->{$plugin_name});
+
+  check_module_name($plugin_name);
+
+  if ($plugin_name !~ /^App::EvalServerAdvanced::Seccomp::Plugin::/) {
+    my $plugin;
+    do {
+      local @INC = config->sandbox->plugin_base;
+      $plugin = $plugin_name if (eval {require_module($plugin_name)});
+      # TODO log errors from loading?
+    };
+
+    unless ($plugin) {
+      # we couldnt' load it from the plugin base, try from @INC with a fully qualified name
+      my $fullname = "App::EvalServerAdvanced::Seccomp::Plugin::$plugin_name";
+      $plugin = $fullname if (eval {require_module($fullname)});
+      # TODO log errors from module loading
+    }
+
+    die "Failed to find plugin $plugin_name" unless $plugin;
+
+    $self->_plugins->{$plugin_name} = $plugin;
+    $plugin->init_plugin($self);
+    return $plugin;
+  } else {
+    if (eval {require_module($plugin_name)}) {
+      $self->_plugins->{$plugin_name} = $plugin_name;
+      $plugin_name->init_plugin($self);
+      return $plugin_name;
+    }
+
+    die "Failed to find plugin $plugin_name";
+  }
+}
+
 sub BUILD {
   my ($self) = @_;
 
-  my $load_module = sub {
-    my ($name) = @_;
-    check_module_name($name);
-
-    if ($name !~ /^App::EvalServerAdvanced::Seccomp::Plugin::/) {
-      do {
-        local @INC = config->sandbox->plugin_base;
-        return $name if (eval {require_module($name)});
-      };
-      # we couldnt' load it from the plugin base, try from @INC with a fully qualified name
-      my $fullname = "App::EvalServerAdvanced::Seccomp::Plugin::$name";
-      return $fullname if (eval {require_module($fullname)});
-      
-      die "Failed to find plugin $name";
-    } else {
-      return $name if (eval {require_module($name)});
-      
-      die "Failed to find plugin $name";      
+  if (config->sandbox->seccomp->plugins) {
+    for my $plugin_name (config->sandbox->seccomp->plugins->@*) {
+      $self->load_plugin($plugin_name);
     }
-  };
-
-  for my $plugin_name (config->sandbox->seccomp->plugins->@*) {
-    my $realname = $load_module->($plugin_name);
-    $realname->init_plugin($self);
   }
 }
 
@@ -430,16 +336,16 @@ This is a rule generator for setting up Linux::Seccomp rules.
 
 =head1 SECURITY
 
-This is an excercise in defense in depths.  The default rulesets 
+This is an excercise in defense in depths.  The default rulesets
 provide a bit of protection against accidentally running knowingly dangerous syscalls.
 
-This does not provide absolute security.  It relies on the fact that the syscalls allowed 
+This does not provide absolute security.  It relies on the fact that the syscalls allowed
 are likely to be safe, or commonly required for normal programs to function properly.
 
 In particular there are two syscalls that are allowed that are involved in the Dirty COW
 kernel exploit.  C<madvise> and C<mmap>, with these two you can actually trigger the Dirty COW
 exploit.  But because the default rules restrict you from creating threads, you can't create the race
-condition needed to actually accomplish it.  So you should still take some 
+condition needed to actually accomplish it.  So you should still take some
 other measures to protect yourself.
 
 =head1 AUTHOR

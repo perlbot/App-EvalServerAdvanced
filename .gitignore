@@ -3,3 +3,4 @@ test.log
 .build
 App-EvalServerAdvanced-*
 testsandbox
+*.swp
