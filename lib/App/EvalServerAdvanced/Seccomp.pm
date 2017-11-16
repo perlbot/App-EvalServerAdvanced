@@ -91,7 +91,7 @@ method load_yaml($yaml_file) {
 
   if (my $consts = $data->{constants}) {
     for my $const_plugin (($consts->{plugins}//[])->@*) {
-      print "TODO load $const_plugin\n";
+      $self->load_plugin("Constants::$const_plugin");
     }
 
     for my $const_key (keys (($consts->{values}//{})->%*)) {
