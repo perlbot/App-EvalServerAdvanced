@@ -135,15 +135,13 @@ sub calculate_permutations {
 }
 
 method apply_seccomp($profile_name) {
-  my $self = shift;
-
   # TODO LOAD the rules
-  for my $rule ($self->profile->{$profile_name}->@* ) {
+  for my $rule ($self->_rendered_profiles->{$profile_name}->@* ) {
       # TODO make this support raw syscall numbers?
       my $syscall = $rule->{syscall};
       # If it looks like it's not a raw number, try to resolve.
       $syscall = Linux::Seccomp::syscall_resolve_name($syscall) if ($syscall =~ /\D/);
-      my @rules = $rule->{rules}->@*;
+      my @rules = ($rule->{rules}//[])->@*;
 
       my %actions = (
         ALLOW => SCMP_ACT_ALLOW,
@@ -153,12 +151,12 @@ method apply_seccomp($profile_name) {
 
       my $action = $actions{$rule->{action}} // SCMP_ACT_ALLOW;
 
-      if ($rule->{action} =~ /^\s*ERRNO\((-?\d+)\)\s*$/) { # send errno() to the process
-        # TODO, support constants? keys from %! maybe? Errno module?
-        $action = SCMP_ACT_ERRNO($1 // -1);
-      } elsif ($rule->{action} =~ /^\s*TRACE\((-?\d+)?\)\s*$/ { # hit ptrace with msgnum
-        $action = SCMP_ACT_TRACE($1 // 0);
-      }
+       if ($rule->{action} =~ /^\s*ERRNO\((-?\d+)\)\s*$/ ) { # send errno() to the process
+         # TODO, support constants? keys from %! maybe? Errno module?
+         $action = SCMP_ACT_ERRNO($1 // -1);
+       } elsif ($rule->{action} =~ /^\s*TRACE\((-?\d+)?\)\s*$/) { # hit ptrace with msgnum
+         $action = SCMP_ACT_TRACE($1 // 0);
+       }
 
       $self->seccomp->rule_add($action, $syscall, @rules);
   }
