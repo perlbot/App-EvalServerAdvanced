@@ -28,7 +28,9 @@ method get_rules($seccomp) {
 
 method to_seccomp($seccomp) {
   my @rules = $self->get_rules($seccomp);
+
   my @seccomp = map {$_->resolve_syscall($seccomp)} @rules;
+
   return @seccomp;
 }
 
@@ -39,7 +41,7 @@ method load_permutes($seccomp) {
     $seccomp->_permutes->{$permute_key} //= []; # Preload an arrayref if needed
 
     for my $value_str ($permute_data->@* ) {
-      my $value = $seccomp->constants->get_value($value_str);
+      my $value = $seccomp->constants->calculate($value_str);
 
       push $seccomp->_permutes->{$permute_key}->@*, $value;
     }

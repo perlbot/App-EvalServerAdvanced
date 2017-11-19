@@ -4,3 +4,4 @@ test.log
 App-EvalServerAdvanced-*
 testsandbox
 *.swp
+*.kate-swp

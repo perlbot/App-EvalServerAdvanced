@@ -7,6 +7,7 @@ use warnings;
 use Function::Parameters;
 
 use App::EvalServerAdvanced::Config;
+use App::EvalServerAdvanced::Seccomp::Syscall;
 
 method init_plugin($class: $seccomp) {
   return; # nothing to do here.
@@ -28,7 +29,7 @@ method exec_wrapper_gen($seccomp) {
 method make_rule($lang_conf) {
   my $strptr = sub {unpack "Q", pack("p", $_[0])};
 
-  return {syscall => 'execve', rules => [[0, '==', $strptr->($lang_conf->{bin})]]};
+  return App::EvalServerAdvanced::Seccomp::Syscall->new({syscall => 'execve', tests => [[0, '==', $strptr->($lang_conf->{bin})]]});
 }
 
 1;

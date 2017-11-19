@@ -13,7 +13,6 @@ use Moo;
 #use POSIX ();
 use Linux::Seccomp;
 use Carp qw/croak/;
-use Permute::Named::Iter qw/permute_named_iter/;
 use Module::Runtime qw/check_module_name require_module module_notional_filename/;
 use App::EvalServerAdvanced::Config;
 use App::EvalServerAdvanced::ConstantCalc;
@@ -92,7 +91,7 @@ method build_seccomp() {
     my $profile_obj = $self->profiles->{$profile_key};
 
     $self->_used_sets({});
-    my @rules = $profile_obj->get_rules($self);
+    my @rules = $profile_obj->to_seccomp($self);
     $self->_rendered_profiles->{$profile_key} = \@rules;
   }
 }
@@ -235,13 +234,162 @@ __END__
 
 App::EvalServerAdvanced::Seccomp - Use of Seccomp to create a safe execution environment
 
-=head1 VERSION
-
-version 0.001
 
 =head1 DESCRIPTION
 
 This is a rule generator for setting up Linux::Seccomp rules.  It's used internally only, and it's API is not given any consideration for backwards compatibility.  It is however useful to look at the source directly.
+
+=head1 YAML
+
+The yaml config file for seccomp contains two main sections, C<profiles> and C<constants>
+
+=head2 CONSTANTS
+
+    constants:
+      plugins:
+        - 'POSIX'
+        - 'LinuxClone'
+      values:
+        TCGETS: 0x5401
+        FIOCLEX: 0x5451
+        FIONBIO: 0x5421
+        TIOCGPTN: 0x80045430
+
+This section is fairly simple with two sections of it's own C<plugins> and C<values>
+
+=over
+
+=item values
+
+Just a key value list of various names for constant values to be used later.  This lets you define anything not already coming from a plugin, and avoid undocumented magic numbers in your rules.  Ideally you should make sure that these come from the proper header files or documentation so that any architecture change doesn't cause the values to change.
+
+Valid ways to represent the values are as follows:
+
+=over
+
+=item hex
+
+Standard perl syntax 0x0123456789_ABCDEF.  Case insensitive, underscores allowed for readability.
+
+=item binary
+
+Standard perl syntax for binary values 0b1111_0000, case insensitive, underscores allowed for readability.
+
+=item octal
+
+Standard perl syntax, and YAML allowed syntax for octal values. 0777 and 0o777 are both valid.  underscores allowed for readability.
+
+=item decimal integers
+
+Normal base ten integers.  1234567890, cannot begin with a 0.  underscores allowed for readability.
+
+=back
+
+=item plugins
+
+Right now there's only two plugins provided with the distrobution, L<App::EvalServerAdvanced::Seccomp::Plugin::Constants::POSIX> and L<App::EvalServerAdvanced::Seccomp::Plugin::Constants::LinuxClone>.  These two plugins pull constants from the L<POSIX> and L<Linux::Clone> modules respectively.  This way things like O_EXCL and CLONE_NEWNS should always be correct for the platform you run on regardless of the kernel version.  That said, they're unlikely to ever change anyway.
+
+Plugins can be loaded by a short name as demonstrated above.  It will first attempt to load them from the configured plugin base in the App::EvalServerAdvanced configuration file.  If it finds it by the short name there (e.g. - 'MyPlugin' will become MyPlugin.pm) then all is fine.  If it's not found then it will try to load it from @INC under the fully qualified namespace C<App::EvalServerAdvanced::Seccomp::Plugin::Constants::$SHORTNAME>.  You can also specify the full name of the module under the namespace and it will only load it from @INC.
+
+=back
+
+=head2 profiles
+
+    profiles:
+      default:
+        include:
+          - time_calls
+          - file_readonly
+          - stdio
+          - exec_wrapper
+          - file_write
+          - file_tty
+          - file_opendir
+          - file_temp
+        rules:
+    # Memory related calls
+          - syscall: mmap
+          - syscall: munmap
+          - syscall: mremap
+          - syscall: mprotect
+          - syscall: madvise
+          - syscall: brk
+
+Profiles are the most important part of setting up seccomp.  They are a whitelist of what programs in the sandbox are allowed to do.  Anything not specified results in the termination of the process.  A profile consists of a name, child profiles, and a set of rules to follow.
+
+=over
+
+=item Profile name
+
+Name for the profile.  Any valid string can be used for the name.  C<default> is expected to exist, but if all languages in the config specify a profile then you can avoid having one named C<default>.  They are case sensitive, no other restrictions apply.
+
+=item includes
+
+A list of profiles that should be included into this one at runtime.  This is useful for organizing rules into basic actions and letting you compose them into a logical groups to handle programs.
+
+=item rules
+
+This is a list of the syscalls to be allowed.  See the L</Rule definitions> section for details.
+
+=item rule_generator
+
+Use a plugin to generate the rules at runtime.  Use a string such as C<"ExecWrapper::gen_exec_wrapper">.  It will then load the plugin C<ExecWrapper> and call the method C<gen_exec_wrapper> on it.  It will be passed the C<App::EvalServerAdvanced::Seccomp> object and be expected to return a set of rules to be used.  Best to see the source code of L<App::EvalServerAdvanced::Seccomp::Plugin::ExecWrapper> to see just how this works currently.
+
+This is useful for handling some edge cases with Seccomp.  Since Seccomp can't dereference pointers you can't actually handle system calls that contain them fully effectively.  But what you can do is limit the specific pointers that are allowed to be passed to the system calls instead.  In the C<ExecWrapper> plugin this gets used to setup rules for the C<execve> syscall to be allowed to be called with strings from the C<config> singleton object inside the server.  This lets you C<exec(...)> only to specific interpreters/binaries with very little security impact after the C<execve> call happens.  It does mean that you can put a new string at those addresses and run C<execve> again but with ASLR doing so is almost impossible as long as the C<seccomp> syscall is not allowed to be used to get the existing eBPF program for examination.
+
+=back
+
+=head1 Rule definitions
+
+    file_open:
+      rules:
+        - syscall: open
+          tests:
+            - [1, '==', '{{open_modes}}']
+        - syscall: openat
+          tests:
+            - [2, '==', '{{open_modes}}']
+        - syscall: close
+
+Rules consist of a few attributes that specify what you're allowed to do.
+
+=over
+
+=item syscall
+
+The most important part of a rule, without it you will end up with a fatal error.  Best practice is to specify the syscall by name, i.e. C<open> or C<openat>.  It will be resolved at runtime using the syscall map of the system automatically, so that you don't have to know the number of the syscalls.  If however there's a syscall that doesn't want to resolve for you, you can specify it by number, but this is not recommended as it will be architecture dependant and cause problems if you change architectures (i.e. from x86_64 to i386).
+
+=item tests
+
+This is probably the least elegant part of the config file, but I couldn't come up with a better setup/syntax for it.  This is a list of tests, all of which must pass, for the given syscall.
+
+Each test is an array of three things, [argument, operator, value].
+
+=over
+
+=item argument
+
+Which argument to the syscall you want to test.  Starting from 0 being the first argument.
+
+=item operator
+
+What operator to use for the test: == != >= <= < > or =~
+
+The =~ operator takes the C<argument> to the syscall and uses the C<value> as a bit mask.  It passes if all the bits from the mask are set in the argument, ignoring any not present in the mask.
+
+=item value
+
+This is the value you want to test for.  It can be either a literal integer value or it can be a string containing a set of constants and bitwise operations.  It uses L<App::EvalServerAdvanced::ConstantCalc> to do the math and you should look at that for the exact operations supported.
+
+Some examples
+
+    'O_CLOEXEC|O_EXCL|O_RDWR'
+
+Also supported are using automatically permutated values by using a string like '{{ open_modes }}'.  In this case all possible values will be pre-generated and substituted into the rule to allow any valid set of flags in a syscall
+
+=back
+
+=back
 
 =head1 SECURITY
 
@@ -256,6 +404,14 @@ kernel exploit.  C<madvise> and C<mmap>, with these two you can actually trigger
 exploit.  But because the default rules restrict you from creating threads, you can't create the race
 condition needed to actually accomplish it.  So you should still take some
 other measures to protect yourself.
+
+=head1 KNOWN ISSUES
+
+=over
+
+=item Compilation errors when loading plugins from the plugin base directory will result in it attempting to load the fully qualified module name.  This will be fixed in future versions to be a fatal error
+
+=back
 
 =head1 AUTHOR
 
