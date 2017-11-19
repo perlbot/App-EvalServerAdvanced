@@ -10,4 +10,5 @@ my $seccomp = App::EvalServerAdvanced::Seccomp->new();
 $seccomp->load_yaml('/home/ryan//workspace/evalserver-async/serverapp/skel-sandbox/etc/seccomp.yaml');
 
 use Data::Dumper;
+$seccomp->build_seccomp;
 print Dumper($seccomp);

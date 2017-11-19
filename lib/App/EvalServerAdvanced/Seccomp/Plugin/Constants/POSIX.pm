@@ -16,7 +16,7 @@ method init_plugin($class: $seccomp) {
      my $value = POSIX->can($name)->();
 
      if (defined($value)) {
-        print "$name => $value\n";
+#        print "$name => $value\n";
         $seccomp->constants->add_constant($name, $value);
      }
    }

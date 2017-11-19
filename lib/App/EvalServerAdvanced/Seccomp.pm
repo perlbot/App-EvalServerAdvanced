@@ -14,38 +14,14 @@ use Moo;
 use Linux::Seccomp;
 use Carp qw/croak/;
 use Permute::Named::Iter qw/permute_named_iter/;
-use Module::Runtime qw/check_module_name require_module/;
+use Module::Runtime qw/check_module_name require_module module_notional_filename/;
 use App::EvalServerAdvanced::Config;
 use App::EvalServerAdvanced::ConstantCalc;
 use App::EvalServerAdvanced::Seccomp::Profile;
 use App::EvalServerAdvanced::Seccomp::Syscall;
 use Function::Parameters;
 use YAML::XS (); # no imports
-
-# use constant {
-#   CLONE_FILES => Linux::Clone::FILES,
-#   CLONE_FS => Linux::Clone::FS,
-#   CLONE_NEWNS => Linux::Clone::NEWNS,
-#   CLONE_VM => Linux::Clone::VM,
-#   CLONE_THREAD => Linux::Clone::THREAD,
-#   CLONE_SIGHAND => Linux::Clone::SIGHAND,
-#   CLONE_SYSVSEM => Linux::Clone::SYSVSEM,
-#   CLONE_NEWUSER => Linux::Clone::NEWUSER,
-#   CLONE_NEWPID => Linux::Clone::NEWPID,
-#   CLONE_NEWUTS => Linux::Clone::NEWUTS,
-#   CLONE_NEWIPC => Linux::Clone::NEWIPC,
-#   CLONE_NEWNET => Linux::Clone::NEWNET,
-#   CLONE_NEWCGROUP => Linux::Clone::NEWCGROUP,
-#   CLONE_PTRACE => Linux::Clone::PTRACE,
-#   CLONE_VFORK => Linux::Clone::VFORK,
-#   CLONE_SETTLS => Linux::Clone::SETTLS,
-#   CLONE_PARENT_SETTID => Linux::Clone::PARENT_SETTID,
-#   CLONE_CHILD_SETTID => Linux::Clone::CHILD_SETTID,
-#   CLONE_CHILD_CLEARTID => Linux::Clone::CHILD_CLEARTID,
-#   CLONE_DETACHED => Linux::Clone::DETACHED,
-#   CLONE_UNTRACED => Linux::Clone::UNTRACED,
-#   CLONE_IO => Linux::Clone::IO,
-# };
+use Path::Tiny;
 
 has exec_map => (is => 'ro', default => sub {+{}});
 has profiles => (is => 'ro', default => sub {+{}});
@@ -57,31 +33,14 @@ has seccomp => (is => 'ro', default => sub {Linux::Seccomp->new(SCMP_ACT_KILL)})
 has _permutes => (is => 'ro', default => sub {+{}});
 has _plugins => (is => 'ro', default => sub {+{}});
 has _fullpermutes => (is => 'ro', lazy => 1, builder => 'calculate_permutations');
-has _used_sets => (is => 'ro', default => sub {+{}});
+has _used_sets => (is => 'rw', default => sub {+{}});
+
+has _rendered_profiles => (is => 'ro', default => sub {+{}});
 
 has _finalized => (is => 'rw', default => 0); # TODO make this set once
 
 # Define some more open modes that POSIX doesn't have for us.
 my ($O_DIRECTORY, $O_CLOEXEC, $O_NOCTTY, $O_NOFOLLOW) = (00200000, 02000000, 00000400, 00400000);
-
-
-#   # exec wrapper
-#   exec_wrapper => {
-#     # we have to generate these at runtime, we can't know ahead of time what they will be
-#     rules => sub {
-#         my $seccomp = shift;
-#         my $strptr = sub {unpack "Q", pack("p", $_[0])};
-#         my @rules;
-#
-#         my $exec_map = $seccomp->exec_map;
-#
-#         for my $version (keys %$exec_map) {
-#           push @rules, {syscall => 'execve', rules => [[0, '==', $strptr->($exec_map->{$version}{bin})]]};
-#         }
-#
-#         return @rules;
-#       }, # sub returns a valid arrayref.  given our $self as first arg.
-#   },
 
 method load_yaml($yaml_file) {
 
@@ -99,7 +58,17 @@ method load_yaml($yaml_file) {
     }
   }
 
-  print Dumper($data);
+
+  for my $profile_key (keys $data->{profiles}->%* ) {
+    my $profile_data = $data->{profiles}->{$profile_key};
+
+    my $profile_obj = App::EvalServerAdvanced::Seccomp::Profile->new(%$profile_data);
+
+    $profile_obj->load_permutes($self);
+    $self->profiles->{$profile_key} = $profile_obj;
+  }
+
+  #print Dumper($data);
 }
 
 sub get_profile_rules {
@@ -111,7 +80,8 @@ sub get_profile_rules {
   }
 
   $self->_used_sets->{$next_profile} = 1;
-  return $self->profiles->{$next_profile}->get_rules;
+  die "No profile found [$next_profile]" unless $self->profiles->{$next_profile};
+  return $self->profiles->{$next_profile}->get_rules($self);
 }
 
 sub rule_add {
@@ -122,15 +92,15 @@ sub rule_add {
 
 # sub _rec_get_rules {
 #   my ($self, $profile) = @_;
-# 
+#
 #   return () if ($self->_used_sets->{$profile});
 #   $self->_used_sets->{$profile} = 1;
-# 
+#
 #   croak "Rule set $profile not found" unless exists $rule_sets{$profile};
-# 
+#
 #   my @rules;
 #   #print "getting profile $profile\n";
-# 
+#
 #   if (ref $rule_sets{$profile}{rules} eq 'ARRAY') {
 #     push @rules, @{$rule_sets{$profile}{rules}};
 #   } elsif (ref $rule_sets{$profile}{rules} eq 'CODE') {
@@ -140,82 +110,77 @@ sub rule_add {
 #   } else {
 #     croak "Rule set $profile defines an invalid set of rules";
 #   }
-# 
+#
 #   for my $perm (keys %{$rule_sets{$profile}{permute} // +{}}) {
 #     push @{$self->_permutes->{$perm}}, @{$rule_sets{$profile}{permute}{$perm}};
 #   }
-# 
+#
 #   for my $include (@{$rule_sets{$profile}{include}//[]}) {
 #     push @rules, $self->_rec_get_rules($include);
 #   }
-# 
+#
 #   return @rules;
 # }
 
-sub build_seccomp {
-  my ($self) = @_;
-
+method build_seccomp() {
   croak "build_seccomp called more than once" if ($self->_finalized);
   $self->_finalized(1);
 
-  my %gathered_rules; # computed rules
+  for my $profile_key (keys $self->profiles->%*) {
+    my $profile_obj = $self->profiles->{$profile_key};
 
-  for my $profile (@{$self->profiles}) {
-    my @rules = $self->_rec_get_rules($profile);
-
-    for my $rule (@rules) {
-      my $syscall = $rule->{syscall};
-      push @{$gathered_rules{$syscall}}, $rule;
-    }
+    $self->_used_sets({});
+    my @rules = $profile_obj->get_rules($self);
+    $self->_rendered_profiles->{$profile_key} = \@rules;
   }
 
-  my %comp_rules;
-
-  for my $syscall (keys %gathered_rules) {
-    my @rules = @{$gathered_rules{$syscall}};
-    for my $rule (@rules) {
-      my $syscall = $rule->{syscall};
-
-      if (exists ($rule->{permute_rules})) {
-        my @perm_on = ();
-        for my $prule (@{$rule->{permute_rules}}) {
-          if (ref $prule->[2]) {
-            push @perm_on, ${$prule->[2]};
-          }
-          if (ref $prule->[0]) {
-            croak "Permuation on argument number not supported using $syscall";
-          }
-        }
-
-        croak "Permutation on syscall rule without actual permutation specified" if (!@perm_on);
-
-        my %perm_hash = map {$_ => $self->_fullpermutes->{$_}} @perm_on;
-        my $iter = permute_named_iter(%perm_hash);
-
-        while (my $pvals = $iter->()) {
-
-          push @{$comp_rules{$syscall}},
-            [map {
-              my @r = @$_;
-              $r[2] = $pvals->{${$r[2]}};
-              \@r;
-            } @{$rule->{permute_rules}}];
-        }
-      } elsif (exists ($rule->{rules})) {
-        push @{$comp_rules{$syscall}}, $rule->{rules};
-      } else {
-        push @{$comp_rules{$syscall}}, [];
-      }
-    }
-  }
+#   my %comp_rules;
+#
+#   for my $syscall (keys %gathered_rules) {
+#     my @rules = @{$gathered_rules{$syscall}};
+#     for my $rule (@rules) {
+#       my $syscall = $rule->{syscall};
+#
+#       if (exists ($rule->{permute_rules})) {
+#         my @perm_on = ();
+#         for my $prule (@{$rule->{permute_rules}}) {
+#           if (ref $prule->[2]) {
+#             push @perm_on, ${$prule->[2]};
+#           }
+#           if (ref $prule->[0]) {
+#             croak "Permuation on argument number not supported using $syscall";
+#           }
+#         }
+#
+#         croak "Permutation on syscall rule without actual permutation specified" if (!@perm_on);
+#
+#         my %perm_hash = map {$_ => $self->_fullpermutes->{$_}} @perm_on;
+#         my $iter = permute_named_iter(%perm_hash);
+#
+#         while (my $pvals = $iter->()) {
+#
+#           push @{$comp_rules{$syscall}},
+#             [map {
+#               my @r = @$_;
+#               $r[2] = $pvals->{${$r[2]}};
+#               \@r;
+#             } @{$rule->{permute_rules}}];
+#         }
+#       } elsif (exists ($rule->{rules})) {
+#         push @{$comp_rules{$syscall}}, $rule->{rules};
+#       } else {
+#         push @{$comp_rules{$syscall}}, [];
+#       }
+#     }
+#   }
 
   # TODO optimize for permissive rules
   # e.g. write => OR write => [0, '==', 1] OR write => [0, '==', 2] becomes write =>
-  for my $syscall (keys %comp_rules) {
-    for my $rule (@{$comp_rules{$syscall}}) {
-      $self->rule_add($syscall, @$rule);
-    }
-  }
+#   for my $syscall (keys %comp_rules) {
+#     for my $rule (@{$comp_rules{$syscall}}) {
+#       $self->rule_add($syscall, @$rule);
+#     }
+#  }
 }
 
 sub calculate_permutations {
@@ -275,15 +240,20 @@ sub load_plugin {
 
   if ($plugin_name !~ /^App::EvalServerAdvanced::Seccomp::Plugin::/) {
     my $plugin;
-    do {
-      local @INC = config->sandbox->plugin_base;
-      $plugin = $plugin_name if (eval {require_module($plugin_name)});
-      # TODO log errors from loading?
-    };
+    if (config->sandbox->plugin_base) { # if we have a plugin base configured, use it first.
+      my $plugin_filename = module_notional_filename($plugin_name);
+      my $path = path(config->sandbox->plugin_base); # get the only path we'll load short stuff from by it's short name, otherwise deleting a file or a typo could load something we don't want
+
+      my $full_path = $path->child($plugin_filename);
+
+      $plugin = $plugin_name if (eval {require $full_path}); # TODO check if it was a failure to find, or a failure to compile.  failure to compile should still be fatal.
+  }
 
     unless ($plugin) {
+      print "Doing fallback for $plugin_name\n";
       # we couldnt' load it from the plugin base, try from @INC with a fully qualified name
       my $fullname = "App::EvalServerAdvanced::Seccomp::Plugin::$plugin_name";
+      print "Fullname $fullname \n";
       $plugin = $fullname if (eval {require_module($fullname)});
       # TODO log errors from module loading
     }
