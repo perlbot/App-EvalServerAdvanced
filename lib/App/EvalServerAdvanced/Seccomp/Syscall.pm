@@ -4,6 +4,7 @@ use Function::Parameters;
 
 has syscall => (is => 'ro');
 has tests => (is => 'ro');
+has action => (is => 'ro', default => "ALLOW");
 
 # take the test and return however many seccomp rules it needs.  doing any permutated arguments, and looking up of constants
 method resolve_syscall($seccomp) {

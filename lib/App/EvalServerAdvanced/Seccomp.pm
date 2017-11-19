@@ -29,7 +29,6 @@ has constants => (is => 'ro', default => sub {App::EvalServerAdvanced::ConstantC
 
 has _rules => (is => 'rw');
 
-has seccomp => (is => 'ro', default => sub {Linux::Seccomp->new(SCMP_ACT_KILL)});
 has _permutes => (is => 'ro', default => sub {+{}});
 has _plugins => (is => 'ro', default => sub {+{}});
 has _fullpermutes => (is => 'ro', lazy => 1, builder => 'calculate_permutations');
@@ -136,6 +135,9 @@ sub calculate_permutations {
 
 method apply_seccomp($profile_name) {
   # TODO LOAD the rules
+
+  my $seccomp = Linux::Seccomp->new(SCMP_ACT_KILL);
+
   for my $rule ($self->_rendered_profiles->{$profile_name}->@* ) {
       # TODO make this support raw syscall numbers?
       my $syscall = $rule->{syscall};
@@ -158,10 +160,10 @@ method apply_seccomp($profile_name) {
          $action = SCMP_ACT_TRACE($1 // 0);
        }
 
-      $self->seccomp->rule_add($action, $syscall, @rules);
+      $seccomp->rule_add($action, $syscall, @rules);
   }
 
-  $self->seccomp->load;
+  $seccomp->load;
 }
 
 method engage($profile_name) {
@@ -215,11 +217,11 @@ sub load_plugin {
 sub BUILD {
   my ($self) = @_;
 
-  if (config->sandbox->seccomp->plugins) {
-    for my $plugin_name (config->sandbox->seccomp->plugins->@*) {
-      $self->load_plugin($plugin_name);
-    }
-  }
+#  if (config->sandbox->seccomp->plugins) {
+#    for my $plugin_name (config->sandbox->seccomp->plugins->@*) {
+#      $self->load_plugin($plugin_name);
+#    }
+#  }
 }
 
 1;
