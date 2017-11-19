@@ -3,7 +3,6 @@ package App::EvalServerAdvanced;
 use strict;
 our $VERSION = '0.021';
 
-use App::EvalServerAdvanced::Sandbox;
 use IO::Async::Loop;
 use IO::Async::Function;
 use App::EvalServerAdvanced::Config;
@@ -51,7 +50,7 @@ method init() {
         debug "Closing session $session_id! ";
         for my $sequence (keys $self->sessions->{$session_id}{jobs}->%*) {
           my $job = $self->sessions->{$session_id}{jobs}{$sequence};
-          
+
           $job->{future}->fail("Session ended") unless $job->{future}->is_ready;
           $job->{canceled} = 1; # Mark them as canceled
         }
@@ -64,7 +63,7 @@ method init() {
         on_write_eof => sub {debug "write_eof"; $close_session->()},
 
         on_read => method ($buffref, $eof) {
-          my ($res, $message, $newbuf); 
+          my ($res, $message, $newbuf);
           do { # decode as many packets as we can
             ($res, $message, $newbuf) = eval{decode_message($$buffref)};
             debug sprintf("packet decode %d %d %d: %d", $res, length($message//''), length($newbuf//''), $eof);
@@ -84,7 +83,7 @@ method init() {
               if ($message->isa("App::EvalServerAdvanced::Protocol::Eval")) {
                 my $sequence = $message->sequence;
                 my $out_encoding = eval {$message->encoding} // "utf8";
-                try {  
+                try {
                   my $prio = ($message->prio->has_pr_deadline ? "deadline" :
                              ($message->prio->has_pr_batch    ? "batch" : "realtime"));
 
@@ -97,7 +96,7 @@ method init() {
                   debug Dumper($evalobj);
 
                   if ($prio eq 'deadline') {
-                    $evalobj->{priority_deadline} = $message->prio->pr_deadline->milliseconds;  
+                    $evalobj->{priority_deadline} = $message->prio->pr_deadline->milliseconds;
                   };
 
                   my $job = $es_self->jobman->add_job($evalobj);
@@ -107,14 +106,14 @@ method init() {
                   # Log the job for the session. Cancel any in progress with the same sequence.
                   if ($es_self->sessions->{$session_id}{jobs}{$sequence}) {
                     my $job = $self->sessions->{$session_id}{jobs}{$sequence};
-                    
+
                     $job->{future}->fail("Session ended") unless $job->{future}->is_ready;
                     $job->{canceled} = 1; # Mark them as canceled
 
                     delete $es_self->sessions->{$session_id}{jobs}{$sequence};
                   }
                   $es_self->sessions->{$session_id}{jobs}{$sequence} = $job;
-                  
+
                   $future->on_ready(fun ($future) {
                     my $output = eval {$future->get()};
                     if ($@) {
@@ -137,7 +136,7 @@ method init() {
               }
             }
           } while($res);
-          
+
           return 0;
         }
       );
@@ -198,7 +197,7 @@ More featureful sandboxing with Seccomp rules.  This helps prevent anything runn
 
 =item Formal network protocol.
 
-You can send multiple requests per connection, and wait on them asynchronously.  
+You can send multiple requests per connection, and wait on them asynchronously.
 This helps enable better scheduling and handling of batch actions, and allows you to cancel inflight requests.
 This also allows the cancelling, by the client, of a long running job while it's running.
 
@@ -213,7 +212,7 @@ Included in this dist is a command L<esa-makesandbox> that will create a skeleto
 
 =head1 SECURITY
 
-This system exercises a series of defense in depth measures.  However they are not perfect.  
+This system exercises a series of defense in depth measures.  However they are not perfect.
 If a kernel level exploit exists to get higher privileges (Dirty COW is a good example), it could be used to write to any bind mounted directory.
 
 My recommendations for extra protection are to use a copy of a running system in the sandbox, and not actually use the /lib64 directories from the existing system.
@@ -223,8 +222,8 @@ Take a look at something like C<debootstrap> to create a skeleton debian based s
 
 =head1 WARRANTY
 
-There is none.  You use this at your own risk.  It is opinionated 
-about what is secure, but it probably isn't secure.  This software 
+There is none.  You use this at your own risk.  It is opinionated
+about what is secure, but it probably isn't secure.  This software
 will result in the hacking of everyone around you.
 
 =head1 TODO

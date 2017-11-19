@@ -30,7 +30,7 @@ bind_mounts = [
 ]
 
 [sandbox.seccomp]
-plugins = ["Perlbot"]
+yaml = "etc/seccomp.yml"
 
 [sandbox.devices]
 # Entries in /dev that must exist
