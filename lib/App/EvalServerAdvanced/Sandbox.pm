@@ -39,9 +39,7 @@ sub _rel2abs {
   return "".$p
 }
 
-my $seccomp = App::EvalServerAdvanced::Seccomp->new();
-$seccomp->load_yaml(config->sandbox->seccomp->yaml); # TODO allow multiple yamls
-$seccomp->build_seccomp;
+my $seccomp;
 
 sub run_eval {
   my $code = shift; # TODO this should be more than just code
@@ -50,6 +48,13 @@ sub run_eval {
   my $work_path = Path::Tiny->tempdir("eval-XXXXXXXX");
 
   chmod(0555, $work_path); # have to fix permissions on the new / or nobody can do anything!
+
+  unless ($seccomp) {
+    App::EvalServerAdvanced::Sandbox::Internal->load_plugins();
+    $seccomp = App::EvalServerAdvanced::Seccomp->new();
+    $seccomp->load_yaml(config->sandbox->seccomp->yaml); # TODO allow multiple yamls
+    $seccomp->build_seccomp;
+  }
 
   my @binds = config->sandbox->bind_mounts->@*;
 

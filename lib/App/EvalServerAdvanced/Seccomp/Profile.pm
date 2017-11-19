@@ -19,8 +19,6 @@ method get_rules($seccomp) {
   if ($self->has_rule_generator()) {
     my ($class, $method) = ($self->rule_generator =~ /^(.*)::([^:]+)$/);
 
-    print "Loading $class for $method\n";
-
     my $plugin = $seccomp->load_plugin($class);
     push @rules, $plugin->$method($seccomp);
   }

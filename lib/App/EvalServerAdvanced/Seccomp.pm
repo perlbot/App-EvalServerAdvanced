@@ -45,7 +45,8 @@ method load_yaml($yaml_file) {
 
   # TODO sanitize file name via Path::Tiny, ensure it's either in the module location, or next to the sandbox config
 
-  my $data = YAML::XS::LoadFile($yaml_file);
+  my $input = do {no warnings 'io'; local $/; open(my $fh, "<", $yaml_file); <$fh>};
+  my $data = YAML::XS::Load($input);
 
   if (my $consts = $data->{constants}) {
     for my $const_plugin (($consts->{plugins}//[])->@*) {
@@ -151,12 +152,12 @@ method apply_seccomp($profile_name) {
         TRAP  => SCMP_ACT_TRAP,
       );
 
-      my $action = $actions{$rule->{action}} // SCMP_ACT_ALLOW;
+      my $action = $actions{$rule->{action}//""} // SCMP_ACT_ALLOW;
 
-       if ($rule->{action} =~ /^\s*ERRNO\((-?\d+)\)\s*$/ ) { # send errno() to the process
+       if ($rule->{action} && $rule->{action} =~ /^\s*ERRNO\((-?\d+)\)\s*$/ ) { # send errno() to the process
          # TODO, support constants? keys from %! maybe? Errno module?
          $action = SCMP_ACT_ERRNO($1 // -1);
-       } elsif ($rule->{action} =~ /^\s*TRACE\((-?\d+)?\)\s*$/) { # hit ptrace with msgnum
+       } elsif ($rule->{action} && $rule->{action} =~ /^\s*TRACE\((-?\d+)?\)\s*$/) { # hit ptrace with msgnum
          $action = SCMP_ACT_TRACE($1 // 0);
        }
 
@@ -190,10 +191,8 @@ sub load_plugin {
   }
 
     unless ($plugin) {
-      print "Doing fallback for $plugin_name\n";
       # we couldnt' load it from the plugin base, try from @INC with a fully qualified name
       my $fullname = "App::EvalServerAdvanced::Seccomp::Plugin::$plugin_name";
-      print "Fullname $fullname \n";
       $plugin = $fullname if (eval {require_module($fullname)});
       # TODO log errors from module loading
     }

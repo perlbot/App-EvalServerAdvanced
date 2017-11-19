@@ -8,7 +8,7 @@ use App::EvalServerAdvanced::Config;
 use Module::Runtime qw/require_module check_module_name/;
 use Moo;
 
-do { # lexically hide all loading
+sub load_plugins {
   my $load_module = sub {
     my ($name) = @_;
     check_module_name($name);
@@ -21,17 +21,17 @@ do { # lexically hide all loading
       # we couldnt' load it from the plugin base, try from @INC with a fully qualified name
       my $fullname = "App::EvalServerAdvanced::Sandbox::Plugin::$name";
       return $fullname if (eval {require_module($fullname)});
-      
+
       die "Failed to find plugin $name";
     } else {
       return $name if (eval {require_module($name)});
-      
-      die "Failed to find plugin $name";      
+
+      die "Failed to find plugin $name";
     }
   };
 
   with map {$load_module->($_)} config->sandbox->plugins->@*;
-};
+}
 
 1;
 __END__
@@ -56,7 +56,7 @@ When configuring the server and setting up a language, you can create a function
         ...
     }
 
-The first argument C<$class> is pretty much useless.  It will always be C<App::EvalServerAdvanced::Sandbox::Internal>, 
+The first argument C<$class> is pretty much useless.  It will always be C<App::EvalServerAdvanced::Sandbox::Internal>,
 as your subroutine is called as a dynamic method call.
 
 In the configuration you can setup the language thusly,
@@ -76,8 +76,8 @@ You can also use this to template the code being passed to an external interpret
         my ($class, $lang, $code) = @_;
         my $qcode = quotemeta $code;
 
-        my $wrapper = 'use Data::Dumper; 
-        
+        my $wrapper = 'use Data::Dumper;
+
         local $Data::Dumper::Terse = 1;
         local $Data::Dumper::Quotekeys = 0;
         local $Data::Dumper::Indent = 0;
@@ -93,7 +93,7 @@ You can also use this to template the code being passed to an external interpret
         }
         ';
         return $wrapper;
-    }    
+    }
 
 And in the configuration of the EvalServer
 
