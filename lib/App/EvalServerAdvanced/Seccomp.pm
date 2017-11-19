@@ -84,44 +84,6 @@ sub get_profile_rules {
   return $self->profiles->{$next_profile}->get_rules($self);
 }
 
-sub rule_add {
-  my ($self, $name, @rules) = @_;
-  # TODO make this support raw syscall numbers?
-  $self->seccomp->rule_add(SCMP_ACT_ALLOW, Linux::Seccomp::syscall_resolve_name($name), @rules);
-}
-
-# sub _rec_get_rules {
-#   my ($self, $profile) = @_;
-#
-#   return () if ($self->_used_sets->{$profile});
-#   $self->_used_sets->{$profile} = 1;
-#
-#   croak "Rule set $profile not found" unless exists $rule_sets{$profile};
-#
-#   my @rules;
-#   #print "getting profile $profile\n";
-#
-#   if (ref $rule_sets{$profile}{rules} eq 'ARRAY') {
-#     push @rules, @{$rule_sets{$profile}{rules}};
-#   } elsif (ref $rule_sets{$profile}{rules} eq 'CODE') {
-#     my @sub_rules = $rule_sets{$profile}{rules}->($self);
-#     push @rules, @sub_rules;
-#   } elsif (!exists $rule_sets{$profile}{rules}) { # ignore it if missing
-#   } else {
-#     croak "Rule set $profile defines an invalid set of rules";
-#   }
-#
-#   for my $perm (keys %{$rule_sets{$profile}{permute} // +{}}) {
-#     push @{$self->_permutes->{$perm}}, @{$rule_sets{$profile}{permute}{$perm}};
-#   }
-#
-#   for my $include (@{$rule_sets{$profile}{include}//[]}) {
-#     push @rules, $self->_rec_get_rules($include);
-#   }
-#
-#   return @rules;
-# }
-
 method build_seccomp() {
   croak "build_seccomp called more than once" if ($self->_finalized);
   $self->_finalized(1);
@@ -133,54 +95,6 @@ method build_seccomp() {
     my @rules = $profile_obj->get_rules($self);
     $self->_rendered_profiles->{$profile_key} = \@rules;
   }
-
-#   my %comp_rules;
-#
-#   for my $syscall (keys %gathered_rules) {
-#     my @rules = @{$gathered_rules{$syscall}};
-#     for my $rule (@rules) {
-#       my $syscall = $rule->{syscall};
-#
-#       if (exists ($rule->{permute_rules})) {
-#         my @perm_on = ();
-#         for my $prule (@{$rule->{permute_rules}}) {
-#           if (ref $prule->[2]) {
-#             push @perm_on, ${$prule->[2]};
-#           }
-#           if (ref $prule->[0]) {
-#             croak "Permuation on argument number not supported using $syscall";
-#           }
-#         }
-#
-#         croak "Permutation on syscall rule without actual permutation specified" if (!@perm_on);
-#
-#         my %perm_hash = map {$_ => $self->_fullpermutes->{$_}} @perm_on;
-#         my $iter = permute_named_iter(%perm_hash);
-#
-#         while (my $pvals = $iter->()) {
-#
-#           push @{$comp_rules{$syscall}},
-#             [map {
-#               my @r = @$_;
-#               $r[2] = $pvals->{${$r[2]}};
-#               \@r;
-#             } @{$rule->{permute_rules}}];
-#         }
-#       } elsif (exists ($rule->{rules})) {
-#         push @{$comp_rules{$syscall}}, $rule->{rules};
-#       } else {
-#         push @{$comp_rules{$syscall}}, [];
-#       }
-#     }
-#   }
-
-  # TODO optimize for permissive rules
-  # e.g. write => OR write => [0, '==', 1] OR write => [0, '==', 2] becomes write =>
-#   for my $syscall (keys %comp_rules) {
-#     for my $rule (@{$comp_rules{$syscall}}) {
-#       $self->rule_add($syscall, @$rule);
-#     }
-#  }
 }
 
 sub calculate_permutations {
@@ -220,15 +134,41 @@ sub calculate_permutations {
   return \%full_permute;
 }
 
-sub apply_seccomp {
+method apply_seccomp($profile_name) {
   my $self = shift;
+
+  # TODO LOAD the rules
+  for my $rule ($self->profile->{$profile_name}->@* ) {
+      # TODO make this support raw syscall numbers?
+      my $syscall = $rule->{syscall};
+      # If it looks like it's not a raw number, try to resolve.
+      $syscall = Linux::Seccomp::syscall_resolve_name($syscall) if ($syscall =~ /\D/);
+      my @rules = $rule->{rules}->@*;
+
+      my %actions = (
+        ALLOW => SCMP_ACT_ALLOW,
+        KILL  => SCMP_ACT_KILL,
+        TRAP  => SCMP_ACT_TRAP,
+      );
+
+      my $action = $actions{$rule->{action}} // SCMP_ACT_ALLOW;
+
+      if ($rule->{action} =~ /^\s*ERRNO\((-?\d+)\)\s*$/) { # send errno() to the process
+        # TODO, support constants? keys from %! maybe? Errno module?
+        $action = SCMP_ACT_ERRNO($1 // -1);
+      } elsif ($rule->{action} =~ /^\s*TRACE\((-?\d+)?\)\s*$/ { # hit ptrace with msgnum
+        $action = SCMP_ACT_TRACE($1 // 0);
+      }
+
+      $self->seccomp->rule_add($action, $syscall, @rules);
+  }
+
   $self->seccomp->load;
 }
 
-sub engage {
-  my $self = shift;
+method engage($profile_name) {
   $self->build_seccomp();
-  $self->apply_seccomp();
+  $self->apply_seccomp($profile_name);
 }
 
 sub load_plugin {
@@ -302,7 +242,7 @@ version 0.001
 
 =head1 DESCRIPTION
 
-This is a rule generator for setting up Linux::Seccomp rules.
+This is a rule generator for setting up Linux::Seccomp rules.  It's used internally only, and it's API is not given any consideration for backwards compatibility.  It is however useful to look at the source directly.
 
 =head1 SECURITY
 
