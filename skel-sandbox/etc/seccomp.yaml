@@ -1,34 +1,3 @@
-# use Linux::Clone;
-#
-# use constant {
-#  CLONE_FILES => Linux::Clone::FILES,
-#  CLONE_FS => Linux::Clone::FS,
-#  CLONE_NEWNS => Linux::Clone::NEWNS,
-#  CLONE_VM => Linux::Clone::VM,
-#  CLONE_THREAD => Linux::Clone::THREAD,
-#  CLONE_SIGHAND => Linux::Clone::SIGHAND,
-#  CLONE_SYSVSEM => Linux::Clone::SYSVSEM,
-#  CLONE_NEWUSER => Linux::Clone::NEWUSER,
-#  CLONE_NEWPID => Linux::Clone::NEWPID,
-#  CLONE_NEWUTS => Linux::Clone::NEWUTS,
-#  CLONE_NEWIPC => Linux::Clone::NEWIPC,
-#  CLONE_NEWNET => Linux::Clone::NEWNET,
-#  CLONE_NEWCGROUP => Linux::Clone::NEWCGROUP,
-#  CLONE_PTRACE => Linux::Clone::PTRACE,
-#  CLONE_VFORK => Linux::Clone::VFORK,
-#  CLONE_SETTLS => Linux::Clone::SETTLS,
-#  CLONE_PARENT_SETTID => Linux::Clone::PARENT_SETTID,
-#  CLONE_CHILD_SETTID => Linux::Clone::CHILD_SETTID,
-#  CLONE_CHILD_CLEARTID => Linux::Clone::CHILD_CLEARTID,
-#  CLONE_DETACHED => Linux::Clone::DETACHED,
-#  CLONE_UNTRACED => Linux::Clone::UNTRACED,
-#  CLONE_IO => Linux::Clone::IO,
-#};
-
-# Define some more open modes that POSIX doesn't have for us.
-# my ($O_DIRECTORY, $O_CLOEXEC, $O_NOCTTY, $O_NOFOLLOW) = (00200000, 02000000, 00000400, 00400000);
-
-# Not sure how this should work yet
 constants:
   plugins:
     - 'POSIX'
@@ -183,7 +152,7 @@ profiles:
           - [1, '==', 'FIOCLEX']
       - syscall: clone
         tests:
-          - [0, '==', 'CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVMEM|CLONE_SETTLS|CLONE_PARENT_SETTID|CLONE_CHILD|CLONE_CHILD_CLEARTID']
+          - [0, '==', 'CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVSEM|CLONE_SETTLS|CLONE_PARENT_SETTID|CLONE_CHILD_CLEARTID']
       - syscall: ioctl
         tests:
           - [1, '==', 'TIOCGPTN']
