@@ -337,6 +337,26 @@ Use a plugin to generate the rules at runtime.  Use a string such as C<"ExecWrap
 
 This is useful for handling some edge cases with Seccomp.  Since Seccomp can't dereference pointers you can't actually handle system calls that contain them fully effectively.  But what you can do is limit the specific pointers that are allowed to be passed to the system calls instead.  In the C<ExecWrapper> plugin this gets used to setup rules for the C<execve> syscall to be allowed to be called with strings from the C<config> singleton object inside the server.  This lets you C<exec(...)> only to specific interpreters/binaries with very little security impact after the C<execve> call happens.  It does mean that you can put a new string at those addresses and run C<execve> again but with ASLR doing so is almost impossible as long as the C<seccomp> syscall is not allowed to be used to get the existing eBPF program for examination.
 
+=item permute
+
+    file_write:
+      include:
+       - 'file_open'
+      permute:
+        open_modes:
+          - 'O_CREAT'
+          - 'O_WRONLY'
+          - 'O_TRUNC'
+          - 'O_RDWR'
+    file_open:
+      rules:
+        - syscall: open
+          tests:
+            - [1, '==', '{{open_modes}}']
+
+This gets used to specify flags for a syscall to use.  In the example above for the C<file_write> profile, it says that the flags O_CREAT, O_WRONLY, O_TRUNC and O_RDWR should be allowed for the permutation named C<open_modes>.  In the C<file_open> profile, we define a syscall that C<open> that can take any combination of the flags from C<open_modes> by specifying the value with C<'{{open_modes}}'>.  See L</Rule definitions> for more information.
+
+
 =back
 
 =head1 Rule definitions
@@ -358,6 +378,8 @@ Rules consist of a few attributes that specify what you're allowed to do.
 =item syscall
 
 The most important part of a rule, without it you will end up with a fatal error.  Best practice is to specify the syscall by name, i.e. C<open> or C<openat>.  It will be resolved at runtime using the syscall map of the system automatically, so that you don't have to know the number of the syscalls.  If however there's a syscall that doesn't want to resolve for you, you can specify it by number, but this is not recommended as it will be architecture dependant and cause problems if you change architectures (i.e. from x86_64 to i386).
+
+=item action
 
 =item tests
 
