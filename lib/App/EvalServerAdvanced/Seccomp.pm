@@ -44,7 +44,7 @@ method load_yaml($yaml_file) {
 
   # TODO sanitize file name via Path::Tiny, ensure it's either in the module location, or next to the sandbox config
 
-  my $input = do {no warnings 'io'; local $/; open(my $fh, "<", $yaml_file); <$fh>};
+  my $input = do {no warnings 'io'; local $/; open(my $fh, "<", $yaml_file) or die "Couldn't load seccomp YAML $yaml_file: $!"; <$fh>};
   my $data = YAML::XS::Load($input);
 
   if (my $consts = $data->{constants}) {
