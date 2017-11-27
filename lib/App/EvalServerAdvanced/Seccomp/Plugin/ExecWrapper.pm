@@ -35,6 +35,7 @@ method make_rule($lang_conf) {
 1;
 
 __END__
-=pod
+
 =head1 DOCS HERE
+
 =cut
