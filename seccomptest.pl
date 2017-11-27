@@ -11,5 +11,5 @@ $seccomp->load_yaml('/home/ryan//workspace/evalserver-async/serverapp/skel-sandb
 
 use Data::Dumper;
 $seccomp->build_seccomp;
-$seccomp->apply_seccomp("default");
-print Dumper($seccomp);
+$seccomp->apply_seccomp("lang_perl");
+#print Dumper($seccomp);
