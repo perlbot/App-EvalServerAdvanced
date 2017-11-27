@@ -160,7 +160,7 @@ method apply_seccomp($profile_name) {
          $action = SCMP_ACT_TRACE($1 // 0);
        }
 
-      printf "%s => [%s]\n", $rule->{syscall}, join("", map {sprintf "\n    $_->[0] $_->[1] $_->[2]"} @rules);
+  #    printf "%s => [%s]\n", $rule->{syscall}, join("", map {sprintf "\n    $_->[0] $_->[1] $_->[2]"} @rules);
       $seccomp->rule_add($action, $syscall, @rules);
   }
 
