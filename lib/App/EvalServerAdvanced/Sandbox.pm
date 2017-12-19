@@ -1,5 +1,5 @@
 package App::EvalServerAdvanced::Sandbox;
-our $VERSION = '0.021';
+our $VERSION = '0.022';
 
 use strict;
 use warnings;
@@ -158,7 +158,7 @@ sub run_eval {
         if $> != $nobody_uid
         or $< != $nobody_uid;
 
-    my %ENV = config->sandbox->environment->%*; # set the environment up
+    %ENV = config->sandbox->environment->%*; # set the environment up
 
     my $main_file;
     # Create the other files.
