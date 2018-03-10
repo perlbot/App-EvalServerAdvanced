@@ -18,6 +18,7 @@ use App::EvalServerAdvanced::Sandbox::Internal;
 use App::EvalServerAdvanced::Seccomp;
 use POSIX qw/_exit/;
 use Data::Dumper;
+use Sys::Linux::Syscall::Execve qw/execve_byref/;
 
 my %sig_map;
 do {
@@ -244,7 +245,8 @@ sub run_code {
     print $tfh $code_file->contents;
     close($tfh);
 
-    $arg_list = [map {
+    # bin must be at the start of the arguments
+    $arg_list = [$bin, map {
       if ($_ eq '%FILE%') {
         "$file";
       } elsif ($_ eq '%CODE%') {
@@ -254,7 +256,7 @@ sub run_code {
       }
     } @$arg_list];
 
-    exec($bin, @$arg_list) or die "Couldn't exec $bin: $!";
+    execve_byref(\$bin, $arg_list, \%ENV) or die "Couldn't exec $bin: $!";
   } else {
     die "No configured way to run $lang\n";
   }
