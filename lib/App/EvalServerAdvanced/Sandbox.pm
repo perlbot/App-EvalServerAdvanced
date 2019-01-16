@@ -48,6 +48,8 @@ sub run_eval {
   my $files = shift;
   my $work_path = Path::Tiny->tempdir("eval-XXXXXXXX");
 
+  $|++;
+
   chmod(0555, $work_path); # have to fix permissions on the new / or nobody can do anything!
 
   unless ($seccomp) {
