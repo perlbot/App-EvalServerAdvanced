@@ -9,34 +9,24 @@ use Module::Runtime qw/require_module check_module_name/;
 use Moo;
 
 sub load_plugins {
-  open(my $fh, ">/tmp/plugins.log");
 
   my $load_module = sub {
     my ($name) = @_;
-    print $fh "Checking $name\n";
     check_module_name($name);
 
     if ($name !~ /^App::EvalServerAdvanced::Sandbox::Plugin::/) {
-      print $fh "Not FQPN, $name\n";
       do {
         local @INC = (config->sandbox->plugin_base, @INC);
-        print $fh "Checking local @INC only\n";
         return $name if (eval {require_module($name)});
-        print $fh "ERROR: $@\n";
       };
       # we couldnt' load it from the plugin base, try from @INC with a fully qualified name
       my $fullname = "App::EvalServerAdvanced::Sandbox::Plugin::$name";
-      print $fh "Checking FQPN $fullname\n";
       return $fullname if (eval {require_module($fullname)});
 
-
-      print $fh "fuck $name\n";
       die "Failed to find plugin $name";
     } else {
-      print $fh "FQPN $name\n";
       return $name if (eval {require_module($name)});
 
-      print $fh "fuck $name\n";
       die "Failed to find plugin $name";
     }
   };
